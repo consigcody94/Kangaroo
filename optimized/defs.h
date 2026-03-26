@@ -69,7 +69,6 @@ typedef char i8;
 #define DP_FLAG				0x8000
 #define INV_FLAG			0x4000
 #define JMP2_FLAG			0x2000
-#define NEG_FLAG			0x1000  // Negative jump: subtract instead of add
 
 #define MD_LEN				10
 
