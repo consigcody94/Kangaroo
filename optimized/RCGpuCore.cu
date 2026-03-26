@@ -32,16 +32,6 @@ __device__ __forceinline__ u32 JumpHash(u64* x)
 	return h & JMP_MASK;
 }
 
-// Extended hash: returns jump index + NEG_FLAG bit for negative jumps
-// Uses bit 9 of hash to decide add vs subtract, doubling effective jump diversity
-__device__ __forceinline__ u32 JumpHashNeg(u64* x)
-{
-	u32 h = (u32)x[0] ^ (u32)(x[0] >> 32) ^ (u32)x[1] ^ (u32)(x[1] >> 32)
-	       ^ (u32)x[2] ^ (u32)(x[2] >> 32) ^ (u32)x[3] ^ (u32)(x[3] >> 32);
-	u32 idx = h & JMP_MASK;
-	u32 neg = (h >> 9) & 1;  // Use bit 9 for sign
-	return idx | (neg ? NEG_FLAG : 0);
-}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -107,18 +97,18 @@ __global__ void KernelA(const TKparams Kparams)
 		
 		//first group
 		LOAD_VAL_256(x, L2x, 0);
-		jmp_ind = JumpHashNeg(x);
+		jmp_ind = JumpHash(x);
 		jmp_table = ((L1S2 >> 0) & 1) ? jmp2_table : jmp1_table;
-		Copy_int4_x2(jmp_x, jmp_table + 8 * (jmp_ind & JMP_MASK));
+		Copy_int4_x2(jmp_x, jmp_table + 8 * jmp_ind);
 		SubModP(inverse, x, jmp_x);
 		SAVE_VAL_256(L2s, inverse, 0);
 		//the rest
 		for (int group = 1; group < PNT_GROUP_CNT; group++)
 		{
 			LOAD_VAL_256(x, L2x, group);
-			jmp_ind = JumpHashNeg(x);
+			jmp_ind = JumpHash(x);
 			jmp_table = ((L1S2 >> group) & 1) ? jmp2_table : jmp1_table;
-			Copy_int4_x2(jmp_x, jmp_table + 8 * (jmp_ind & JMP_MASK));
+			Copy_int4_x2(jmp_x, jmp_table + 8 * jmp_ind);
 			SubModP(tmp, x, jmp_x);
 			MulModP(inverse, inverse, tmp);
 			SAVE_VAL_256(L2s, inverse, group);
@@ -134,13 +124,11 @@ __global__ void KernelA(const TKparams Kparams)
 
 			LOAD_VAL_256(x0, L2x, group);
             LOAD_VAL_256(y0, L2y, group);
-			jmp_ind = JumpHashNeg(x0);
-			u32 jmp_idx = jmp_ind & JMP_MASK; // strip NEG_FLAG for table lookup
+			jmp_ind = JumpHash(x0);
+			
 			jmp_table = ((L1S2 >> group) & 1) ? jmp2_table : jmp1_table;
 			Copy_int4_x2(jmp_x, jmp_table + 8 * jmp_idx);
 			Copy_int4_x2(jmp_y, jmp_table + 8 * jmp_idx + 4);
-			// Negative jump: negate jmp_y to compute P - J instead of P + J
-			if (jmp_ind & NEG_FLAG)
 				NegModP(jmp_y);
 			u32 inv_flag = (u32)y0[0] & 1;
 			if (inv_flag)
@@ -563,10 +551,10 @@ __device__ __forceinline__ bool ProcessJumpDistance(u32 step_ind, u32 d_cur, u64
 	((int4*)(jmp))[0] = ((int4*)(jmp_d + 4 * (d_cur & JMP_MASK)))[0];
 	jmp[2] = *(jmp_d + 4 * (d_cur & JMP_MASK) + 2);
 
-	// INV_FLAG = endomorphism negation, NEG_FLAG = negative jump
+	// INV_FLAG = endomorphism negation
 	// XOR: both flags cancel out (double negation)
-	bool subtract = ((d_cur & INV_FLAG) != 0) ^ ((d_cur & NEG_FLAG) != 0);
-	if (subtract)
+	if (d_cur & INV_FLAG)
+	
 		Sub192from192(d, jmp)
 	else
 		Add192to192(d, jmp);

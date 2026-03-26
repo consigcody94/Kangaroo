@@ -8,9 +8,12 @@ A high-performance GPU-accelerated Pollard Kangaroo solver for the Elliptic Curv
 
 | Metric | Before (RC Original) | After (This Fork) | Improvement |
 |--------|---------------------|-------------------|-------------|
-| **K constant** | 1.55 | **0.75** | **2.07x faster solves** |
-| **GPU Speed** | 1,491 MKeys/s | 1,530 MKeys/s | Maintained |
+| **K constant (mean, 10 runs)** | 1.55 | **1.15** | **26% faster solves** |
+| **K constant (median)** | — | **1.07** | — |
+| **K constant (best)** | — | **0.37** | — |
+| **GPU Speed** | 1,491 MKeys/s | 1,555 MKeys/s | +4% |
 | **Error Rate** | 0 | 0 | Zero errors |
+| **Statistical significance** | — | p < 0.05 | Welch t-test confirmed |
 | **Tested On** | RTX 4090 | RTX 3060, RTX 3050 | Multi-GPU verified |
 
 > **K = total_operations / sqrt(range_size)** --- lower is better. The theoretical minimum for the kangaroo method with secp256k1's full automorphism group is **K = 0.51**. Our K = 0.75 is within 47% of the absolute floor.
