@@ -96,7 +96,7 @@ __device__ __forceinline__ void SubModP(u64* res, u64* val1, u64* val2)
     u32 carry;
     subc_32(carry, 0, 0);
     if (carry)
-    { 
+    {
 		add_cc_64(res[0], res[0], P_0);
 		addc_cc_64(res[1], res[1], P_123);
 		addc_cc_64(res[2], res[2], P_123);
@@ -111,7 +111,7 @@ __device__ __forceinline__ void AddModP(u64* res, u64* val1, u64* val2)
 	add_cc_64(tmp[0], val1[0], val2[0]);
 	addc_cc_64(tmp[1], val1[1], val2[1]);
 	addc_cc_64(tmp[2], val1[2], val2[2]);
-	addc_cc_64(tmp[3], val1[3], val2[3]);	
+	addc_cc_64(tmp[3], val1[3], val2[3]);
 	addc_32(carry, 0, 0);
 	Copy_u64_x4(res, tmp);
 
@@ -193,7 +193,7 @@ __device__ __forceinline__ void mul_256_by_64(u64* res, u64* val256, u64 val64)
 	addc_cc_32(rs[5], tmp[7], tmp[8]);
 	addc_cc_32(rs[6], tmp[9], tmp[10]);
 	addc_cc_32(rs[7], tmp[11], tmp[12]);
-	addc_32(rs[8], tmp[13], 0); //we cannot get carry here for rs[9] because mul 8+1=9 words, rs[9] is 10th word
+	addc_32(rs[8], tmp[13], 0);
 
 	u64 kk[7];
 	u32* k = (u32*)kk;
@@ -213,7 +213,7 @@ __device__ __forceinline__ void mul_256_by_64(u64* res, u64* val256, u64 val64)
 	addc_cc_32(k[5], tmp[7], tmp[8]);
 	addc_cc_32(k[6], tmp[9], tmp[10]);
 	addc_cc_32(k[7], tmp[11], tmp[12]);
-	addc_32(k[8], tmp[13], 0); //we cannot get carry here for k[9] because mul 8+1=9 words, k[9] is 10th word
+	addc_32(k[8], tmp[13], 0);
 
 	add_cc_32(rs[1], rs[1], k[0]);
 	addc_cc_32(rs[2], rs[2], k[1]);
@@ -379,6 +379,67 @@ __device__ __forceinline__ void SqrModP(u64* res, u64* val)
 	addc_cc_64(res[1], buff[1], tmp2[1]);
 	addc_cc_64(res[2], buff[2], 0ull);
 	addc_64(res[3], buff[3], 0ull);
+}
+
+// Multiply x by beta (cube root of unity) for secp256k1 endomorphism
+// phi(x,y) = (beta*x, y) -- enables order-6 automorphism group
+__device__ __forceinline__ void MulByBeta(u64* res, u64* x)
+{
+	u64 beta[4] = { ENDO_BETA_0, ENDO_BETA_1, ENDO_BETA_2, ENDO_BETA_3 };
+	MulModP(res, x, beta);
+}
+
+__device__ __forceinline__ void MulByBeta2(u64* res, u64* x)
+{
+	u64 beta2[4] = { ENDO_BETA2_0, ENDO_BETA2_1, ENDO_BETA2_2, ENDO_BETA2_3 };
+	MulModP(res, x, beta2);
+}
+
+// Gaudry-Schost: 256-bit unsigned comparison (a < b)
+__device__ __forceinline__ bool IsLessThan256(u64* a, u64* b)
+{
+	if (a[3] != b[3]) return a[3] < b[3];
+	if (a[2] != b[2]) return a[2] < b[2];
+	if (a[1] != b[1]) return a[1] < b[1];
+	return a[0] < b[0];
+}
+
+// Gaudry-Schost: Compute canonical x-coordinate (smallest of x, beta*x, beta^2*x)
+// Used for jump hash selection — walks that reach equivalent points follow same path
+// Returns x-class (0, 2, or 4) and writes canonical x to canon_x
+__device__ __forceinline__ u32 CanonicalX(u64* canon_x, u64* x)
+{
+	__align__(16) u64 bx[4], b2x[4];
+	// Compute beta*x and beta^2*x INDEPENDENTLY (breaks serial dependency)
+	// Each is a single MulModP, but they don't depend on each other
+	MulByBeta(bx, x);
+	MulByBeta2(b2x, x);  // Direct: beta^2 * x, not beta * (beta * x)
+
+	u32 class_idx = 0;
+	Copy_u64_x4(canon_x, x);
+
+	if (IsLessThan256(bx, canon_x))
+	{
+		Copy_u64_x4(canon_x, bx);
+		class_idx = GS_CLASS_BETA;
+	}
+
+	if (IsLessThan256(b2x, canon_x))
+	{
+		Copy_u64_x4(canon_x, b2x);
+		class_idx = GS_CLASS_BETA2;
+	}
+
+	return class_idx;
+}
+
+// Full canonicalization including y-sign for DP records
+__device__ __forceinline__ u32 Canonicalize(u64* canon_x, u64* x, u64* y)
+{
+	u32 class_idx = CanonicalX(canon_x, x);
+	if (y[0] & 1)
+		class_idx |= 1;
+	return class_idx;
 }
 
 __device__ __forceinline__ void add_288(u32* res, u32* val1, u32* val2)

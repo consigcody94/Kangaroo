@@ -195,10 +195,187 @@ EcPoint Ec::DoublePoint(EcPoint& pnt)
 	return res;
 }
 
-//k up to 256 bits
-EcPoint Ec::MultiplyG(EcInt& k)
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Jacobian projective coordinate operations
+// Formulas from https://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html
+// secp256k1: y^2 = x^3 + 7, a = 0
+
+void EcPointJ::SetInfinity()
+{
+	x.Set(1);
+	y.Set(1);
+	z.SetZero();
+}
+
+bool EcPointJ::IsInfinity()
+{
+	return z.IsZero();
+}
+
+void EcPointJ::FromAffine(EcPoint& pnt)
+{
+	x = pnt.x;
+	y = pnt.y;
+	z.Set(1);
+}
+
+EcPoint EcPointJ::ToAffine()
 {
 	EcPoint res;
+	EcInt zinv = z;
+	zinv.InvModP();        // z^(-1)
+	EcInt zinv2 = zinv;
+	zinv2.SqrModP();       // z^(-2)
+	EcInt zinv3 = zinv2;
+	zinv3.MulModP(zinv);   // z^(-3)
+	res.x = x;
+	res.x.MulModP(zinv2);  // X / Z^2
+	res.y = y;
+	res.y.MulModP(zinv3);  // Y / Z^3
+	return res;
+}
+
+// Point doubling in Jacobian coordinates for a=0 curves (secp256k1)
+// Cost: 1M + 5S + 1*2 + 1*3 + 1*4 + 1*8
+// From EFD: dbl-2009-l
+// A = X1^2, B = Y1^2, C = B^2, D = 2*((X1+B)^2 - A - C)
+// E = 3*A, F = E^2, X3 = F - 2*D, Y3 = E*(D-X3) - 8*C, Z3 = 2*Y1*Z1
+void Ec::DoublePointJ(EcPointJ& res, EcPointJ& pnt)
+{
+	EcInt A, B, C, D, E, F, t;
+
+	A = pnt.x;
+	A.SqrModP();            // A = X1^2
+
+	B = pnt.y;
+	B.SqrModP();            // B = Y1^2
+
+	C = B;
+	C.SqrModP();            // C = B^2
+
+	// D = 2*((X1+B)^2 - A - C)
+	t = pnt.x;
+	t.AddModP(B);
+	D = t;
+	D.SqrModP();            // (X1+B)^2
+	D.SubModP(A);
+	D.SubModP(C);
+	EcInt D2 = D;
+	D.AddModP(D2);          // D = 2*((X1+B)^2 - A - C)
+
+	// E = 3*A
+	E = A;
+	EcInt A2 = A;
+	E.AddModP(A2);
+	E.AddModP(A);            // E = 3*A
+
+	F = E;
+	F.SqrModP();             // F = E^2
+
+	// X3 = F - 2*D
+	res.x = F;
+	res.x.SubModP(D);
+	res.x.SubModP(D);        // X3 = F - 2*D
+
+	// Y3 = E*(D - X3) - 8*C
+	res.y = D;
+	res.y.SubModP(res.x);
+	res.y.MulModP(E);        // E*(D-X3)
+	// 8*C = 2*4*C
+	EcInt C8 = C;
+	t = C;
+	C8.AddModP(t);            // 2*C
+	t = C8;
+	C8.AddModP(t);            // 4*C
+	t = C8;
+	C8.AddModP(t);            // 8*C
+	res.y.SubModP(C8);        // Y3 = E*(D-X3) - 8*C
+
+	// Z3 = 2*Y1*Z1
+	res.z = pnt.y;
+	res.z.MulModP(pnt.z);
+	t = res.z;
+	res.z.AddModP(t);         // Z3 = 2*Y1*Z1
+}
+
+// Mixed addition: Jacobian + Affine -> Jacobian
+// pnt2 is in affine (Z=1), which saves multiplications
+// Cost: 7M + 4S
+// From EFD: madd-2007-bl
+// U2 = X2*Z1^2, S2 = Y2*Z1^3, H = U2-X1, HH = H^2
+// I = 4*HH, J = H*I, r = 2*(S2-Y1), V = X1*I
+// X3 = r^2 - J - 2*V, Y3 = r*(V-X3) - 2*Y1*J, Z3 = (Z1+H)^2 - Z1^2 - HH
+void Ec::AddPointsJA(EcPointJ& res, EcPointJ& pnt1, EcPoint& pnt2)
+{
+	EcInt Z1sq, U2, S2, H, HH, I, J, r, V, t;
+
+	Z1sq = pnt1.z;
+	Z1sq.SqrModP();              // Z1^2
+
+	U2 = pnt2.x;
+	U2.MulModP(Z1sq);            // U2 = X2 * Z1^2
+
+	S2 = pnt2.y;
+	t = Z1sq;
+	t.MulModP(pnt1.z);           // Z1^3
+	S2.MulModP(t);               // S2 = Y2 * Z1^3
+
+	H = U2;
+	H.SubModP(pnt1.x);           // H = U2 - X1
+
+	HH = H;
+	HH.SqrModP();                // HH = H^2
+
+	// I = 4*HH
+	I = HH;
+	t = I;
+	I.AddModP(t);                 // 2*HH
+	t = I;
+	I.AddModP(t);                 // 4*HH
+
+	J = H;
+	J.MulModP(I);                 // J = H * I
+
+	// r = 2*(S2 - Y1)
+	r = S2;
+	r.SubModP(pnt1.y);           // S2 - Y1
+	t = r;
+	r.AddModP(t);                 // r = 2*(S2 - Y1)
+
+	V = pnt1.x;
+	V.MulModP(I);                 // V = X1 * I
+
+	// X3 = r^2 - J - 2*V
+	res.x = r;
+	res.x.SqrModP();              // r^2
+	res.x.SubModP(J);
+	res.x.SubModP(V);
+	res.x.SubModP(V);             // X3 = r^2 - J - 2*V
+
+	// Y3 = r*(V - X3) - 2*Y1*J
+	res.y = V;
+	res.y.SubModP(res.x);         // V - X3
+	res.y.MulModP(r);             // r*(V - X3)
+	t = pnt1.y;
+	t.MulModP(J);                  // Y1*J
+	res.y.SubModP(t);
+	res.y.SubModP(t);              // Y3 = r*(V-X3) - 2*Y1*J
+
+	// Z3 = (Z1+H)^2 - Z1^2 - HH
+	res.z = pnt1.z;
+	t = H;
+	res.z.AddModP(t);              // Z1 + H
+	res.z.SqrModP();               // (Z1+H)^2
+	res.z.SubModP(Z1sq);
+	res.z.SubModP(HH);             // Z3 = (Z1+H)^2 - Z1^2 - HH
+}
+
+// Scalar multiplication using Jacobian coordinates internally
+// Only one field inversion at the end (ToAffine)
+EcPoint Ec::MultiplyG_Jacobian(EcInt& k)
+{
+	EcPoint res;
+	EcPointJ resJ;
 	EcPoint t = g_G;
 	bool first = true;
 	int n = 3;
@@ -206,24 +383,135 @@ EcPoint Ec::MultiplyG(EcInt& k)
 		n--;
 	if (n < 0)
 		return res; //error
-	int index;                     
+	int index;
 	_BitScanReverse64((DWORD*)&index, k.data[n]);
 	for (int i = 0; i <= 64 * n + index; i++)
 	{
-		u8 v = (k.data[i / 64] >> (i % 64)) & 1;	
+		u8 v = (k.data[i / 64] >> (i % 64)) & 1;
 		if (v)
 		{
 			if (first)
 			{
 				first = false;
-				res = t;
+				resJ.FromAffine(t);
 			}
 			else
-				res = Ec::AddPoints(res, t);
+			{
+				EcPointJ tmp;
+				AddPointsJA(tmp, resJ, t);
+				resJ = tmp;
+			}
 		}
-		t = Ec::DoublePoint(t);
+		t = Ec::DoublePoint(t); // still doubles in affine for the base point table
 	}
-	return res;
+	if (first)
+		return res; //error, k was 0
+	return resJ.ToAffine();
+}
+
+// wNAF-5 scalar multiplication with Jacobian coordinates
+// Precomputes: G, 3G, 5G, 7G, 9G, 11G, 13G, 15G (8 affine points)
+// Then scans the wNAF representation from MSB to LSB:
+//   - always double (in Jacobian, no inversions)
+//   - on non-zero digit, add/subtract the precomputed affine point (mixed add, no inversions)
+// Only ONE field inversion at the very end (ToAffine)
+// Total: ~256 doublings + ~51 additions, with 0 intermediate inversions (vs ~128 inversions in original)
+EcPoint Ec::MultiplyG_wNAF(EcInt& k)
+{
+	EcPoint res;
+	const int W = 5; // window size
+	const int PRECOMP = 1 << (W - 1); // 16, but we only use odd indices: 1,3,5,...,15 = 8 points
+
+	// Precompute odd multiples of G: table[i] = (2*i+1)*G for i=0..7
+	EcPoint table[PRECOMP / 2]; // 8 points
+	table[0] = g_G; // 1*G
+	EcPoint G2 = Ec::DoublePoint(g_G); // 2*G
+	for (int i = 1; i < PRECOMP / 2; i++)
+		table[i] = Ec::AddPoints(table[i - 1], G2); // (2*i+1)*G
+
+	// Convert scalar k to wNAF representation
+	// wNAF digits are in {0, +-1, +-3, +-5, ..., +-(2^(w-1)-1)}
+	int wnaf[257]; // at most 257 digits (256 bits + 1 possible carry)
+	int wnaf_len = 0;
+
+	EcInt kk = k;
+	while (!kk.IsZero())
+	{
+		if (kk.data[0] & 1) // odd
+		{
+			// Get the window value
+			int val = (int)(kk.data[0] & ((1 << W) - 1)); // low W bits
+			if (val >= (1 << (W - 1)))
+				val -= (1 << W); // make it signed: if >= 16, subtract 32
+
+			wnaf[wnaf_len++] = val;
+
+			// Subtract val from kk
+			if (val > 0)
+			{
+				EcInt sub;
+				sub.Set((u64)val);
+				kk.Sub(sub);
+			}
+			else
+			{
+				EcInt add;
+				add.Set((u64)(-val));
+				kk.Add(add);
+			}
+		}
+		else
+		{
+			wnaf[wnaf_len++] = 0;
+		}
+		kk.ShiftRight(1);
+	}
+
+	// Process wNAF from MSB to LSB
+	EcPointJ resJ;
+	bool first = true;
+
+	for (int i = wnaf_len - 1; i >= 0; i--)
+	{
+		if (!first)
+		{
+			EcPointJ tmp;
+			DoublePointJ(tmp, resJ);
+			resJ = tmp;
+		}
+
+		if (wnaf[i] != 0)
+		{
+			int idx = (wnaf[i] > 0) ? (wnaf[i] - 1) / 2 : (-wnaf[i] - 1) / 2;
+			EcPoint tblPnt = table[idx];
+
+			if (wnaf[i] < 0)
+				tblPnt.y.NegModP(); // negate Y for subtraction (free on secp256k1)
+
+			if (first)
+			{
+				first = false;
+				resJ.FromAffine(tblPnt);
+			}
+			else
+			{
+				EcPointJ tmp;
+				AddPointsJA(tmp, resJ, tblPnt);
+				resJ = tmp;
+			}
+		}
+	}
+
+	if (first)
+		return res; // error, k was 0
+	return resJ.ToAffine(); // single inversion here
+}
+
+//k up to 256 bits
+//Now uses wNAF-5 + Jacobian coordinates for ~10x fewer inversions
+EcPoint Ec::MultiplyG(EcInt& k)
+{
+	return MultiplyG_wNAF(k);
 }
 
 #ifdef DEBUG_MODE
@@ -266,9 +554,9 @@ EcInt Ec::CalcY(EcInt& x, bool is_even)
 	EcInt tmp;
 	tmp.Set(7);
 	res = x;
-	res.MulModP(x);
-	res.MulModP(x);
-	res.AddModP(tmp);
+	res.SqrModP(); // x^2
+	res.MulModP(x); // x^3
+	res.AddModP(tmp); // x^3 + 7
 	res.SqrtModP();
 	if ((res.data[0] & 1) == is_even)
 		res.NegModP();
@@ -280,11 +568,11 @@ bool Ec::IsValidPoint(EcPoint& pnt)
 	EcInt x, y, seven;
 	seven.Set(7);
 	x = pnt.x;
-	x.MulModP(pnt.x);
-	x.MulModP(pnt.x);
+	x.SqrModP(); // x^2
+	x.MulModP(pnt.x); // x^3
 	x.AddModP(seven);
 	y = pnt.y;
-	y.MulModP(pnt.y);
+	y.SqrModP(); // y^2
 	return x.IsEqual(y);
 }
 
@@ -534,6 +822,155 @@ void EcInt::MulModP(EcInt& val)
 		Sub(g_P);
 }
 
+void EcInt::SqrModP()
+{
+	u64 buff[8], tmp[5], h;
+	u64 cross[5]; // for cross-product accumulation
+
+	// Compute 512-bit square using upper triangle + diagonal
+	// Diagonal terms: a[0]^2, a[1]^2, a[2]^2, a[3]^2
+	// Cross terms (doubled): a[0]*a[1], a[0]*a[2], a[0]*a[3], a[1]*a[2], a[1]*a[3], a[2]*a[3]
+
+	// Start with a[0] * a[0] -> buff[0..1]
+	buff[0] = _umul128(data[0], data[0], &buff[1]);
+	buff[2] = buff[3] = buff[4] = buff[5] = buff[6] = buff[7] = 0;
+
+	// Cross products: a[0] * a[1..3] (stored at buff[1..])
+	Mul256_by_64(data, data[0], cross); // a[0] * {a[0],a[1],a[2],a[3]}
+	// We already have a[0]*a[0] in buff[0..1], so we need a[0]*a[1..3] starting at cross[1]
+	// Actually, let's use a cleaner approach: compute all cross products directly
+
+	// a[0]*a[1]
+	u64 lo, hi2;
+	lo = _umul128(data[0], data[1], &hi2);
+	u8 c = _addcarry_u64(0, buff[1], lo, &buff[1]);
+	c = _addcarry_u64(c, buff[2], hi2, &buff[2]);
+	c = _addcarry_u64(c, buff[3], 0, &buff[3]);
+
+	// a[0]*a[2]
+	lo = _umul128(data[0], data[2], &hi2);
+	c = _addcarry_u64(0, buff[2], lo, &buff[2]);
+	c = _addcarry_u64(c, buff[3], hi2, &buff[3]);
+	c = _addcarry_u64(c, buff[4], 0, &buff[4]);
+
+	// a[0]*a[3]
+	lo = _umul128(data[0], data[3], &hi2);
+	c = _addcarry_u64(0, buff[3], lo, &buff[3]);
+	c = _addcarry_u64(c, buff[4], hi2, &buff[4]);
+	c = _addcarry_u64(c, buff[5], 0, &buff[5]);
+
+	// a[1]*a[2]
+	lo = _umul128(data[1], data[2], &hi2);
+	c = _addcarry_u64(0, buff[3], lo, &buff[3]);
+	c = _addcarry_u64(c, buff[4], hi2, &buff[4]);
+	c = _addcarry_u64(c, buff[5], 0, &buff[5]);
+
+	// a[1]*a[3]
+	lo = _umul128(data[1], data[3], &hi2);
+	c = _addcarry_u64(0, buff[4], lo, &buff[4]);
+	c = _addcarry_u64(c, buff[5], hi2, &buff[5]);
+	c = _addcarry_u64(c, buff[6], 0, &buff[6]);
+
+	// a[2]*a[3]
+	lo = _umul128(data[2], data[3], &hi2);
+	c = _addcarry_u64(0, buff[5], lo, &buff[5]);
+	c = _addcarry_u64(c, buff[6], hi2, &buff[6]);
+	c = _addcarry_u64(c, buff[7], 0, &buff[7]);
+
+	// Double all cross products (shift left by 1)
+	buff[7] = (buff[7] << 1) | (buff[6] >> 63);
+	buff[6] = (buff[6] << 1) | (buff[5] >> 63);
+	buff[5] = (buff[5] << 1) | (buff[4] >> 63);
+	buff[4] = (buff[4] << 1) | (buff[3] >> 63);
+	buff[3] = (buff[3] << 1) | (buff[2] >> 63);
+	buff[2] = (buff[2] << 1) | (buff[1] >> 63);
+	buff[1] = (buff[1] << 1); // buff[0] had a[0]^2, no cross term
+
+	// Add diagonal terms: a[0]^2 already in buff[0..1] (but we shifted buff[1], fix it)
+	// Recompute: clear buff and do it properly
+	// Actually let's restart with a cleaner approach
+
+	// Reset
+	memset(buff, 0, sizeof(buff));
+
+	// Diagonal terms
+	u64 sq_lo, sq_hi;
+	sq_lo = _umul128(data[0], data[0], &sq_hi);
+	buff[0] = sq_lo; buff[1] = sq_hi;
+	sq_lo = _umul128(data[1], data[1], &sq_hi);
+	buff[2] = sq_lo; buff[3] = sq_hi;
+	sq_lo = _umul128(data[2], data[2], &sq_hi);
+	buff[4] = sq_lo; buff[5] = sq_hi;
+	sq_lo = _umul128(data[3], data[3], &sq_hi);
+	buff[6] = sq_lo; buff[7] = sq_hi;
+
+	// Cross products (each appears twice, so we add them doubled)
+	// a[0]*a[1] at position 1
+	lo = _umul128(data[0], data[1], &hi2);
+	c = _addcarry_u64(0, buff[1], lo, &buff[1]); c = _addcarry_u64(c, buff[2], hi2, &buff[2]);
+	c = _addcarry_u64(c, buff[3], 0, &buff[3]); c = _addcarry_u64(c, buff[4], 0, &buff[4]);
+	c = _addcarry_u64(c, buff[5], 0, &buff[5]); c = _addcarry_u64(c, buff[6], 0, &buff[6]);
+	_addcarry_u64(c, buff[7], 0, &buff[7]);
+	c = _addcarry_u64(0, buff[1], lo, &buff[1]); c = _addcarry_u64(c, buff[2], hi2, &buff[2]);
+	c = _addcarry_u64(c, buff[3], 0, &buff[3]); c = _addcarry_u64(c, buff[4], 0, &buff[4]);
+	c = _addcarry_u64(c, buff[5], 0, &buff[5]); c = _addcarry_u64(c, buff[6], 0, &buff[6]);
+	_addcarry_u64(c, buff[7], 0, &buff[7]);
+
+	// a[0]*a[2] at position 2
+	lo = _umul128(data[0], data[2], &hi2);
+	c = _addcarry_u64(0, buff[2], lo, &buff[2]); c = _addcarry_u64(c, buff[3], hi2, &buff[3]);
+	c = _addcarry_u64(c, buff[4], 0, &buff[4]); c = _addcarry_u64(c, buff[5], 0, &buff[5]);
+	c = _addcarry_u64(c, buff[6], 0, &buff[6]); _addcarry_u64(c, buff[7], 0, &buff[7]);
+	c = _addcarry_u64(0, buff[2], lo, &buff[2]); c = _addcarry_u64(c, buff[3], hi2, &buff[3]);
+	c = _addcarry_u64(c, buff[4], 0, &buff[4]); c = _addcarry_u64(c, buff[5], 0, &buff[5]);
+	c = _addcarry_u64(c, buff[6], 0, &buff[6]); _addcarry_u64(c, buff[7], 0, &buff[7]);
+
+	// a[0]*a[3] at position 3
+	lo = _umul128(data[0], data[3], &hi2);
+	c = _addcarry_u64(0, buff[3], lo, &buff[3]); c = _addcarry_u64(c, buff[4], hi2, &buff[4]);
+	c = _addcarry_u64(c, buff[5], 0, &buff[5]); c = _addcarry_u64(c, buff[6], 0, &buff[6]);
+	_addcarry_u64(c, buff[7], 0, &buff[7]);
+	c = _addcarry_u64(0, buff[3], lo, &buff[3]); c = _addcarry_u64(c, buff[4], hi2, &buff[4]);
+	c = _addcarry_u64(c, buff[5], 0, &buff[5]); c = _addcarry_u64(c, buff[6], 0, &buff[6]);
+	_addcarry_u64(c, buff[7], 0, &buff[7]);
+
+	// a[1]*a[2] at position 3
+	lo = _umul128(data[1], data[2], &hi2);
+	c = _addcarry_u64(0, buff[3], lo, &buff[3]); c = _addcarry_u64(c, buff[4], hi2, &buff[4]);
+	c = _addcarry_u64(c, buff[5], 0, &buff[5]); c = _addcarry_u64(c, buff[6], 0, &buff[6]);
+	_addcarry_u64(c, buff[7], 0, &buff[7]);
+	c = _addcarry_u64(0, buff[3], lo, &buff[3]); c = _addcarry_u64(c, buff[4], hi2, &buff[4]);
+	c = _addcarry_u64(c, buff[5], 0, &buff[5]); c = _addcarry_u64(c, buff[6], 0, &buff[6]);
+	_addcarry_u64(c, buff[7], 0, &buff[7]);
+
+	// a[1]*a[3] at position 4
+	lo = _umul128(data[1], data[3], &hi2);
+	c = _addcarry_u64(0, buff[4], lo, &buff[4]); c = _addcarry_u64(c, buff[5], hi2, &buff[5]);
+	c = _addcarry_u64(c, buff[6], 0, &buff[6]); _addcarry_u64(c, buff[7], 0, &buff[7]);
+	c = _addcarry_u64(0, buff[4], lo, &buff[4]); c = _addcarry_u64(c, buff[5], hi2, &buff[5]);
+	c = _addcarry_u64(c, buff[6], 0, &buff[6]); _addcarry_u64(c, buff[7], 0, &buff[7]);
+
+	// a[2]*a[3] at position 5
+	lo = _umul128(data[2], data[3], &hi2);
+	c = _addcarry_u64(0, buff[5], lo, &buff[5]); c = _addcarry_u64(c, buff[6], hi2, &buff[6]);
+	_addcarry_u64(c, buff[7], 0, &buff[7]);
+	c = _addcarry_u64(0, buff[5], lo, &buff[5]); c = _addcarry_u64(c, buff[6], hi2, &buff[6]);
+	_addcarry_u64(c, buff[7], 0, &buff[7]);
+
+	// Fast mod P (same as MulModP)
+	Mul256_by_64(buff + 4, P_REV, tmp);
+	c = _addcarry_u64(0, buff[0], tmp[0], buff);
+	c = _addcarry_u64(c, buff[1], tmp[1], buff + 1);
+	c = _addcarry_u64(c, buff[2], tmp[2], buff + 2);
+	tmp[4] += _addcarry_u64(c, buff[3], tmp[3], buff + 3);
+	c = _addcarry_u64(0, buff[0], _umul128(tmp[4], P_REV, &h), data);
+	c = _addcarry_u64(c, buff[1], h, data + 1);
+	c = _addcarry_u64(c, 0, buff[2], data + 2);
+	data[4] = _addcarry_u64(c, buff[3], 0, data + 3);
+	while (data[4])
+		Sub(g_P);
+}
+
 void EcInt::Mul_u64(EcInt& val, u64 multiplier)
 {
 	Assign(val);
@@ -671,26 +1108,85 @@ void EcInt::InvModP()
 		SetZero(); //error
 }
 
-// x = a^ { (p + 1) / 4 } mod p
+// x = a^((p + 1) / 4) mod p
+// Optimized addition chain for secp256k1: only 13 multiplications + 254 squarings
+// Based on the structure of (P+1)/4 which has a run of 223 consecutive 1-bits
+// Derived from bitcoin-core/secp256k1 field exponentiation technique
 void EcInt::SqrtModP()
 {
-	EcInt one, res;
-	one.Set(1);
-	EcInt exp = g_P;
-	exp.Add(one);
-	exp.ShiftRight(2);
-	res.Set(1);
-	EcInt cur = *this;
-	while (!exp.IsZero())
-	{
-		if (exp.data[0] & 1)
-			res.MulModP(cur);
-		EcInt tmp = cur;
-		tmp.MulModP(cur);
-		cur = tmp;
-		exp.ShiftRight(1);
-	}
-	*this = res;
+	EcInt x1, x2, x3, x6, x9, x11, x22, x44, x88, x176, x220, x223, t;
+
+	// x1 = input (a)
+	x1 = *this;
+
+	// x2 = a^(2^2 - 1) = a^3
+	x2 = x1;
+	x2.SqrModP();       // a^2
+	x2.MulModP(x1);     // a^3
+
+	// x3 = a^(2^3 - 1) = a^7
+	x3 = x2;
+	x3.SqrModP();       // a^6
+	x3.MulModP(x1);     // a^7
+
+	// x6 = a^(2^6 - 1) = a^63
+	x6 = x3;
+	for (int i = 0; i < 3; i++) x6.SqrModP();  // a^(7 * 2^3) = a^56
+	x6.MulModP(x3);     // a^63
+
+	// x9 = a^(2^9 - 1) = a^511
+	x9 = x6;
+	for (int i = 0; i < 3; i++) x9.SqrModP();  // a^(63 * 2^3) = a^504
+	x9.MulModP(x3);     // a^511
+
+	// x11 = a^(2^11 - 1) = a^2047
+	x11 = x9;
+	for (int i = 0; i < 2; i++) x11.SqrModP(); // a^(511 * 2^2) = a^2044
+	x11.MulModP(x2);    // a^2047
+
+	// x22 = a^(2^22 - 1)
+	x22 = x11;
+	for (int i = 0; i < 11; i++) x22.SqrModP(); // a^(2047 * 2^11)
+	x22.MulModP(x11);   // a^(2^22 - 1)
+
+	// x44 = a^(2^44 - 1)
+	x44 = x22;
+	for (int i = 0; i < 22; i++) x44.SqrModP();
+	x44.MulModP(x22);
+
+	// x88 = a^(2^88 - 1)
+	x88 = x44;
+	for (int i = 0; i < 44; i++) x88.SqrModP();
+	x88.MulModP(x44);
+
+	// x176 = a^(2^176 - 1)
+	x176 = x88;
+	for (int i = 0; i < 88; i++) x176.SqrModP();
+	x176.MulModP(x88);
+
+	// x220 = a^(2^220 - 1)
+	x220 = x176;
+	for (int i = 0; i < 44; i++) x220.SqrModP();
+	x220.MulModP(x44);
+
+	// x223 = a^(2^223 - 1)
+	x223 = x220;
+	for (int i = 0; i < 3; i++) x223.SqrModP();
+	x223.MulModP(x3);
+
+	// The exponent (P+1)/4 for secp256k1:
+	// = 2^254 - 2^30 - 2^7 - 2^6 - 2^5 - 2^4 - 2^2
+	// = (2^223 - 1) * 2^31 + 2^30 + ... (specific bit pattern)
+	// Assemble: t = x223 * 2^23 * x22 * 2^6 * x2 * 2^2
+	t = x223;
+	for (int i = 0; i < 23; i++) t.SqrModP(); // x223 << 23
+	t.MulModP(x22);    // + x22
+	for (int i = 0; i < 6; i++) t.SqrModP();  // << 6
+	t.MulModP(x2);     // + x2
+	t.SqrModP();        // << 1
+	t.SqrModP();        // << 1 (total << 2)
+
+	*this = t;
 }
 
 std::mt19937_64 rng;

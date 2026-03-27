@@ -46,6 +46,7 @@ private:
 
 	EcPoint PntA;
 	EcPoint PntB;
+	EcPoint PntC; // 4-kangaroo: endomorphism-shifted offset (phi(PntA))
 
 	int cur_stats_ind;
 	int SpeedStats[STATS_WND_SIZE];
