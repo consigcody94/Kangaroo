@@ -19,9 +19,17 @@ extern bool gGenMode; //tames generation mode
 int RCGpuKang::CalcKangCnt()
 {
 	Kparams.BlockCnt = mpCnt;
-	Kparams.BlockSize = IsOldGpu ? 512 : 256;
-	Kparams.GroupCnt = IsOldGpu ? 64 : 24;
-	return Kparams.BlockSize* Kparams.GroupCnt* Kparams.BlockCnt;
+	if (IsOldGpu) {
+		Kparams.BlockSize = BLOCK_SIZE_OLD_GPU;
+		Kparams.GroupCnt = PNT_GROUP_OLD_GPU;
+	} else if (IsBlackwell) {
+		Kparams.BlockSize = BLOCK_SIZE_BLACKWELL;
+		Kparams.GroupCnt = PNT_GROUP_BLACKWELL;
+	} else {
+		Kparams.BlockSize = BLOCK_SIZE_NEW_GPU;
+		Kparams.GroupCnt = PNT_GROUP_NEW_GPU;
+	}
+	return Kparams.BlockSize * Kparams.GroupCnt * Kparams.BlockCnt;
 }
 
 //executes in main thread
@@ -46,8 +54,16 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 		return false;
 
 	Kparams.BlockCnt = mpCnt;
-	Kparams.BlockSize = IsOldGpu ? BLOCK_SIZE_OLD_GPU : BLOCK_SIZE_NEW_GPU;
-	Kparams.GroupCnt = IsOldGpu ? PNT_GROUP_OLD_GPU : PNT_GROUP_NEW_GPU;
+	if (IsOldGpu) {
+		Kparams.BlockSize = BLOCK_SIZE_OLD_GPU;
+		Kparams.GroupCnt = PNT_GROUP_OLD_GPU;
+	} else if (IsBlackwell) {
+		Kparams.BlockSize = BLOCK_SIZE_BLACKWELL;
+		Kparams.GroupCnt = PNT_GROUP_BLACKWELL;
+	} else {
+		Kparams.BlockSize = BLOCK_SIZE_NEW_GPU;
+		Kparams.GroupCnt = PNT_GROUP_NEW_GPU;
+	}
 	KangCnt = Kparams.BlockSize * Kparams.GroupCnt * Kparams.BlockCnt;
 	Kparams.KangCnt = KangCnt;
 	Kparams.DP = DP;
@@ -55,6 +71,8 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	Kparams.KernelB_LDS_Size = 64 * JMP_CNT;
 	Kparams.KernelC_LDS_Size = 96 * JMP_CNT;
 	Kparams.IsGenMode = gGenMode;
+	extern bool gEquiv6;
+	Kparams.IsEquiv6 = gEquiv6;
 
 //allocate gpu mem
 	u64 size;
@@ -251,7 +269,8 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	}
 	free(buf);
 
-	printf("GPU %d: allocated %llu MB, %d kangaroos. OldGpuMode: %s\r\n", CudaIndex, total_mem / (1024 * 1024), KangCnt, IsOldGpu ? "Yes" : "No");
+	const char* gpuMode = IsOldGpu ? "Old" : (IsBlackwell ? "Blackwell" : "Ada");
+	printf("GPU %d: allocated %llu MB, %d kangaroos. Mode: %s\r\n", CudaIndex, total_mem / (1024 * 1024), KangCnt, gpuMode);
 	return true;
 }
 

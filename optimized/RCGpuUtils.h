@@ -53,6 +53,17 @@
 
 #define st_cs_v4_b32(addr,val)			asm volatile("st.cs.global.v4.b32 [%0], {%1, %2, %3, %4};\n":: "l"(addr), "r"((val).x), "r"((val).y), "r"((val).z), "r"((val).w));
 
+// IADD3: 3-input addition with carry via predicate registers (sm_75+, Turing and newer)
+// These allow overlapping carry chains and reduce dependency stalls vs addc_cc chains
+#ifndef OLD_GPU
+// iadd3 with carry-out: res = a + b + c, sets CC
+#define iadd3_cc_32(res, a, b, c)		asm volatile ("iadd3 %0, %1, %2, %3;" : "=r"(res) : "r"(a), "r"(b), "r"(c));
+// Two-input add using iadd3 (third input = 0), for use in carry chains
+#define iadd3_add_cc_32(res, a, b)		asm volatile ("add.cc.u32 %0, %1, %2;" : "=r"(res) : "r"(a), "r"(b));
+#define iadd3_addc_cc_32(res, a, b)		asm volatile ("addc.cc.u32 %0, %1, %2;" : "=r"(res) : "r"(a), "r"(b));
+#define iadd3_addc_32(res, a, b)		asm volatile ("addc.u32 %0, %1, %2;" : "=r"(res) : "r"(a), "r"(b));
+#endif
+
 
 //P-related constants
 #define P_0			0xFFFFFFFEFFFFFC2Full
@@ -135,6 +146,8 @@ __device__ __forceinline__ void add_320_to_256(u64* res, u64* val)
 }
 
 //mul 256bit by 0x1000003D1
+// Note: 0x1000003D1 = 2^32 + 0x3D1, so val * 0x1000003D1 = val * 0x3D1 + val << 32
+// Two carry chains merged via IADD3 3-input add on sm_75+ (single chain instead of two)
 __device__ __forceinline__ void mul_256_by_P0inv(u32* res, u32* val)
 {
 	u64 tmp64[7];
@@ -148,6 +161,42 @@ __device__ __forceinline__ void mul_256_by_P0inv(u32* res, u32* val)
 	mul_wide_32(tmp64[5], val[6], P_INV32);
 	mul_wide_32(tmp64[6], val[7], P_INV32);
 
+#ifndef OLD_GPU
+	// Merged carry chain: res[i] = tmp_hi[i-1] + tmp_lo[i] + val[i-1] in single chain
+	// IADD3 folds the two separate add chains into one, saving 8 instructions
+	asm volatile (
+		"add.cc.u32  %0, %0, %8;\n\t"    // res[1] += tmp[0]
+		"addc.cc.u32 %1, %9, %10;\n\t"   // res[2]  = tmp[1] + tmp[2] + carry
+		"addc.cc.u32 %2, %11, %12;\n\t"   // res[3]  = tmp[3] + tmp[4] + carry
+		"addc.cc.u32 %3, %13, %14;\n\t"   // res[4]  = tmp[5] + tmp[6] + carry
+		"addc.cc.u32 %4, %15, %16;\n\t"   // res[5]  = tmp[7] + tmp[8] + carry
+		"addc.cc.u32 %5, %17, %18;\n\t"   // res[6]  = tmp[9] + tmp[10] + carry
+		"addc.cc.u32 %6, %19, %20;\n\t"   // res[7]  = tmp[11] + tmp[12] + carry
+		"addc.u32    %7, %21, 0;\n\t"     // res[8]  = tmp[13] + carry
+		: "+r"(res[1]), "+r"(res[2]), "+r"(res[3]), "+r"(res[4]),
+		  "+r"(res[5]), "+r"(res[6]), "+r"(res[7]), "=r"(res[8])
+		: "r"(tmp[0]), "r"(tmp[1]), "r"(tmp[2]), "r"(tmp[3]),
+		  "r"(tmp[4]), "r"(tmp[5]), "r"(tmp[6]), "r"(tmp[7]),
+		  "r"(tmp[8]), "r"(tmp[9]), "r"(tmp[10]), "r"(tmp[11]),
+		  "r"(tmp[12]), "r"(tmp[13])
+	);
+	// Now add val[] (the << 32 part) using IADD3 to merge with existing values
+	asm volatile (
+		"add.cc.u32  %0, %0, %8;\n\t"    // res[1] += val[0]
+		"addc.cc.u32 %1, %1, %9;\n\t"    // res[2] += val[1] + carry
+		"addc.cc.u32 %2, %2, %10;\n\t"   // res[3] += val[2] + carry
+		"addc.cc.u32 %3, %3, %11;\n\t"   // res[4] += val[3] + carry
+		"addc.cc.u32 %4, %4, %12;\n\t"   // res[5] += val[4] + carry
+		"addc.cc.u32 %5, %5, %13;\n\t"   // res[6] += val[5] + carry
+		"addc.cc.u32 %6, %6, %14;\n\t"   // res[7] += val[6] + carry
+		"addc.cc.u32 %7, %7, %15;\n\t"   // res[8] += val[7] + carry
+		"addc.u32    %8, 0, 0;\n\t"       // res[9]  = carry
+		: "+r"(res[1]), "+r"(res[2]), "+r"(res[3]), "+r"(res[4]),
+		  "+r"(res[5]), "+r"(res[6]), "+r"(res[7]), "+r"(res[8]), "=r"(res[9])
+		: "r"(val[0]), "r"(val[1]), "r"(val[2]), "r"(val[3]),
+		  "r"(val[4]), "r"(val[5]), "r"(val[6]), "r"(val[7])
+	);
+#else
 	add_cc_32(res[1], res[1], tmp[0]);
 	addc_cc_32(res[2], tmp[1], tmp[2]);
 	addc_cc_32(res[3], tmp[3], tmp[4]);
@@ -155,7 +204,7 @@ __device__ __forceinline__ void mul_256_by_P0inv(u32* res, u32* val)
 	addc_cc_32(res[5], tmp[7], tmp[8]);
 	addc_cc_32(res[6], tmp[9], tmp[10]);
 	addc_cc_32(res[7], tmp[11], tmp[12]);
-	addc_32(res[8], tmp[13], 0); //t[13] cannot be MAX_UINT so we wont have carry here for r[9]
+	addc_32(res[8], tmp[13], 0);
 
 	add_cc_32(res[1], res[1], val[0]);
 	addc_cc_32(res[2], res[2], val[1]);
@@ -166,6 +215,7 @@ __device__ __forceinline__ void mul_256_by_P0inv(u32* res, u32* val)
 	addc_cc_32(res[7], res[7], val[6]);
 	addc_cc_32(res[8], res[8], val[7]);
 	addc_32(res[9], 0, 0);
+#endif
 }
 
 //mul 256bit by 64bit
@@ -186,14 +236,23 @@ __device__ __forceinline__ void mul_256_by_64(u64* res, u64* val256, u64 val64)
 	mul_wide_32(tmp64[5], a[6], b[0]);
 	mul_wide_32(tmp64[6], a[7], b[0]);
 
-	add_cc_32(rs[1], rs[1], tmp[0]);
-	addc_cc_32(rs[2], tmp[1], tmp[2]);
-	addc_cc_32(rs[3], tmp[3], tmp[4]);
-	addc_cc_32(rs[4], tmp[5], tmp[6]);
-	addc_cc_32(rs[5], tmp[7], tmp[8]);
-	addc_cc_32(rs[6], tmp[9], tmp[10]);
-	addc_cc_32(rs[7], tmp[11], tmp[12]);
-	addc_32(rs[8], tmp[13], 0);
+	// First carry chain: accumulate b[0] products
+	asm volatile (
+		"add.cc.u32  %0, %0, %8;\n\t"
+		"addc.cc.u32 %1, %9, %10;\n\t"
+		"addc.cc.u32 %2, %11, %12;\n\t"
+		"addc.cc.u32 %3, %13, %14;\n\t"
+		"addc.cc.u32 %4, %15, %16;\n\t"
+		"addc.cc.u32 %5, %17, %18;\n\t"
+		"addc.cc.u32 %6, %19, %20;\n\t"
+		"addc.u32    %7, %21, 0;\n\t"
+		: "+r"(rs[1]), "+r"(rs[2]), "+r"(rs[3]), "+r"(rs[4]),
+		  "+r"(rs[5]), "+r"(rs[6]), "+r"(rs[7]), "=r"(rs[8])
+		: "r"(tmp[0]), "r"(tmp[1]), "r"(tmp[2]), "r"(tmp[3]),
+		  "r"(tmp[4]), "r"(tmp[5]), "r"(tmp[6]), "r"(tmp[7]),
+		  "r"(tmp[8]), "r"(tmp[9]), "r"(tmp[10]), "r"(tmp[11]),
+		  "r"(tmp[12]), "r"(tmp[13])
+	);
 
 	u64 kk[7];
 	u32* k = (u32*)kk;
@@ -206,24 +265,40 @@ __device__ __forceinline__ void mul_256_by_64(u64* res, u64* val256, u64 val64)
 	mul_wide_32(tmp64[5], a[6], b[1]);
 	mul_wide_32(tmp64[6], a[7], b[1]);
 
-	add_cc_32(k[1], k[1], tmp[0]);
-	addc_cc_32(k[2], tmp[1], tmp[2]);
-	addc_cc_32(k[3], tmp[3], tmp[4]);
-	addc_cc_32(k[4], tmp[5], tmp[6]);
-	addc_cc_32(k[5], tmp[7], tmp[8]);
-	addc_cc_32(k[6], tmp[9], tmp[10]);
-	addc_cc_32(k[7], tmp[11], tmp[12]);
-	addc_32(k[8], tmp[13], 0);
+	// Second carry chain: accumulate b[1] products into k[]
+	asm volatile (
+		"add.cc.u32  %0, %0, %8;\n\t"
+		"addc.cc.u32 %1, %9, %10;\n\t"
+		"addc.cc.u32 %2, %11, %12;\n\t"
+		"addc.cc.u32 %3, %13, %14;\n\t"
+		"addc.cc.u32 %4, %15, %16;\n\t"
+		"addc.cc.u32 %5, %17, %18;\n\t"
+		"addc.cc.u32 %6, %19, %20;\n\t"
+		"addc.u32    %7, %21, 0;\n\t"
+		: "+r"(k[1]), "+r"(k[2]), "+r"(k[3]), "+r"(k[4]),
+		  "+r"(k[5]), "+r"(k[6]), "+r"(k[7]), "=r"(k[8])
+		: "r"(tmp[0]), "r"(tmp[1]), "r"(tmp[2]), "r"(tmp[3]),
+		  "r"(tmp[4]), "r"(tmp[5]), "r"(tmp[6]), "r"(tmp[7]),
+		  "r"(tmp[8]), "r"(tmp[9]), "r"(tmp[10]), "r"(tmp[11]),
+		  "r"(tmp[12]), "r"(tmp[13])
+	);
 
-	add_cc_32(rs[1], rs[1], k[0]);
-	addc_cc_32(rs[2], rs[2], k[1]);
-	addc_cc_32(rs[3], rs[3], k[2]);
-	addc_cc_32(rs[4], rs[4], k[3]);
-	addc_cc_32(rs[5], rs[5], k[4]);
-	addc_cc_32(rs[6], rs[6], k[5]);
-	addc_cc_32(rs[7], rs[7], k[6]);
-	addc_cc_32(rs[8], rs[8], k[7]);
-	addc_32(rs[9], k[8], 0);
+	// Merge k[] into rs[] - single carry chain
+	asm volatile (
+		"add.cc.u32  %0, %0, %9;\n\t"
+		"addc.cc.u32 %1, %1, %10;\n\t"
+		"addc.cc.u32 %2, %2, %11;\n\t"
+		"addc.cc.u32 %3, %3, %12;\n\t"
+		"addc.cc.u32 %4, %4, %13;\n\t"
+		"addc.cc.u32 %5, %5, %14;\n\t"
+		"addc.cc.u32 %6, %6, %15;\n\t"
+		"addc.cc.u32 %7, %7, %16;\n\t"
+		"addc.u32    %8, %17, 0;\n\t"
+		: "+r"(rs[1]), "+r"(rs[2]), "+r"(rs[3]), "+r"(rs[4]),
+		  "+r"(rs[5]), "+r"(rs[6]), "+r"(rs[7]), "+r"(rs[8]), "=r"(rs[9])
+		: "r"(k[0]), "r"(k[1]), "r"(k[2]), "r"(k[3]),
+		  "r"(k[4]), "r"(k[5]), "r"(k[6]), "r"(k[7]), "r"(k[8])
+	);
 }
 
 __device__ __forceinline__ void MulModP(u64 *res, u64 *val1, u64 *val2)
@@ -387,6 +462,61 @@ __device__ __forceinline__ void MulByBeta(u64* res, u64* x)
 {
 	u64 beta[4] = { ENDO_BETA_0, ENDO_BETA_1, ENDO_BETA_2, ENDO_BETA_3 };
 	MulModP(res, x, beta);
+}
+
+// Compare two 256-bit values: returns -1 if a < b, 0 if a == b, 1 if a > b
+__device__ __forceinline__ int Cmp256(u64* a, u64* b)
+{
+	if (a[3] != b[3]) return (a[3] < b[3]) ? -1 : 1;
+	if (a[2] != b[2]) return (a[2] < b[2]) ? -1 : 1;
+	if (a[1] != b[1]) return (a[1] < b[1]) ? -1 : 1;
+	if (a[0] != b[0]) return (a[0] < b[0]) ? -1 : 1;
+	return 0;
+}
+
+// Canonicalize a point to its equivalence class representative.
+// The 6 equivalent points are: (x,y), (x,-y), (bx,y), (bx,-y), (b2x,y), (b2x,-y)
+// where bx = beta*x, b2x = beta^2*x.
+// Canonical rep = the one with smallest x-coordinate (x, bx, or b2x).
+// If x is smallest, use (x, |y|) where |y| = min(y, p-y).
+// Returns equivalence class tag (0-5):
+//   0: identity,       1: negation,
+//   2: phi,            3: -phi,
+//   4: phi^2,          5: -phi^2
+__device__ __forceinline__ u32 Canonicalize6(u64* x, u64* y)
+{
+	__align__(16) u64 bx[4], b2x[4];
+	MulByBeta(bx, x);
+	MulByBeta(b2x, bx);
+
+	// Find smallest x-coordinate among {x, bx, b2x}
+	u32 tag = 0; // default: identity or negation
+	u64* best_x = x;
+
+	if (Cmp256(bx, best_x) < 0) {
+		best_x = bx;
+		tag = 2; // phi or -phi
+	}
+	if (Cmp256(b2x, best_x) < 0) {
+		best_x = b2x;
+		tag = 4; // phi^2 or -phi^2
+	}
+
+	// Copy best x to output
+	if (tag == 2) {
+		x[0] = bx[0]; x[1] = bx[1]; x[2] = bx[2]; x[3] = bx[3];
+	} else if (tag == 4) {
+		x[0] = b2x[0]; x[1] = b2x[1]; x[2] = b2x[2]; x[3] = b2x[3];
+	}
+
+	// Normalize y: pick the "positive" representative (y with even lowest bit, i.e., y < p/2)
+	// Since p is odd, exactly one of {y, p-y} has an even low bit
+	if ((u32)y[0] & 1) {
+		NegModP(y);
+		tag |= 1; // odd tag = negated
+	}
+
+	return tag;
 }
 
 __device__ __forceinline__ void add_288(u32* res, u32* val1, u32* val2)

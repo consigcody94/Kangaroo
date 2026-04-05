@@ -30,20 +30,28 @@ typedef char i8;
 #define PNT_GROUP_NEW_GPU	24
 //can be 8, 16, 24, 32, 40, 48, 56, 64
 #define PNT_GROUP_OLD_GPU	64
+//Blackwell (RTX 5090): larger register file, 192KB L2/SM
+#define PNT_GROUP_BLACKWELL	32
 
 #define BLOCK_SIZE_NEW_GPU	256
 #define BLOCK_SIZE_OLD_GPU	512
- 
+#define BLOCK_SIZE_BLACKWELL	256
+
 //use different options for cards older than RTX 40xx
 #ifdef __CUDA_ARCH__
 #if __CUDA_ARCH__ < 890
 #define OLD_GPU
+#elif __CUDA_ARCH__ >= 1000
+#define BLACKWELL_GPU
 #endif
 #ifdef OLD_GPU
-#define BLOCK_SIZE			BLOCK_SIZE_OLD_GPU		
-#define PNT_GROUP_CNT		PNT_GROUP_OLD_GPU	
+#define BLOCK_SIZE			BLOCK_SIZE_OLD_GPU
+#define PNT_GROUP_CNT		PNT_GROUP_OLD_GPU
+#elif defined(BLACKWELL_GPU)
+#define BLOCK_SIZE			BLOCK_SIZE_BLACKWELL
+#define PNT_GROUP_CNT		PNT_GROUP_BLACKWELL
 #else
-#define BLOCK_SIZE			BLOCK_SIZE_NEW_GPU	
+#define BLOCK_SIZE			BLOCK_SIZE_NEW_GPU
 #define PNT_GROUP_CNT		PNT_GROUP_NEW_GPU
 #endif
 #else //CPU, fake values
@@ -90,6 +98,24 @@ typedef char i8;
 // Endomorphism DP flag
 #define ENDO_FLAG			0x1000
 
+// 6-class equivalence walk: canonicalize points using {1, -1, phi, -phi, phi^2, -phi^2}
+// Tag bits in jmp_ind (3 bits for equivalence class 0-5)
+#define EQUIV6_TAG_MASK		0x0700
+#define EQUIV6_TAG_SHIFT	8
+
+// beta^2 mod p = beta * beta (second cube root of unity)
+// beta^2 = 0x851695d49a83f8ef919bb86153cbcb16630fb68aed0a766a3ec693d68e6afa40
+#define ENDO_BETA2_0 0x3ec693d68e6afa40ULL
+#define ENDO_BETA2_1 0x630fb68aed0a766aULL
+#define ENDO_BETA2_2 0x919bb86153cbcb16ULL
+#define ENDO_BETA2_3 0x851695d49a83f8efULL
+
+// lambda^2 mod n (for distance recovery in 6-class walk)
+#define ENDO_LAMBDA2_0 0xe4437ed6010e8828ULL
+#define ENDO_LAMBDA2_1 0x7fffffffffffffffULL
+#define ENDO_LAMBDA2_2 0x5d576e7357a4501dULL
+#define ENDO_LAMBDA2_3 0xac9c52b33fa3db8bULL
+
 //#define DEBUG_MODE
 
 //gpu kernel parameters
@@ -114,6 +140,7 @@ struct TKparams
 	u32* dbg_buf;
 	u32* LoopedKangs;
 	bool IsGenMode; //tames generation mode
+	bool IsEquiv6;  //6-class equivalence walk mode
 
 	u32 KernelA_LDS_Size;
 	u32 KernelB_LDS_Size;

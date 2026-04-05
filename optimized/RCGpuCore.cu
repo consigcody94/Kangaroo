@@ -127,8 +127,8 @@ __global__ void KernelA(const TKparams Kparams)
 			jmp_ind = JumpHash(x0);
 			
 			jmp_table = ((L1S2 >> group) & 1) ? jmp2_table : jmp1_table;
-			Copy_int4_x2(jmp_x, jmp_table + 8 * jmp_idx);
-			Copy_int4_x2(jmp_y, jmp_table + 8 * jmp_idx + 4);
+			Copy_int4_x2(jmp_x, jmp_table + 8 * jmp_ind);
+			Copy_int4_x2(jmp_y, jmp_table + 8 * jmp_ind + 4);
 				NegModP(jmp_y);
 			u32 inv_flag = (u32)y0[0] & 1;
 			if (inv_flag)
@@ -151,12 +151,23 @@ __global__ void KernelA(const TKparams Kparams)
 			SqrModP(tmp2, tmp);
 
 			SubModP(x, tmp2, jmp_x);
-			SubModP(x, x, x0); 
-			SAVE_VAL_256(L2x, x, group); 
+			SubModP(x, x, x0);
 
 			SubModP(y, x0, x);
 			MulModP(y, y, tmp);
 			SubModP(y, y, y0);
+
+			// 6-class equivalence walk: canonicalize point to smallest x among
+			// {x, beta*x, beta^2*x} and normalize y sign.
+			// This makes all 6 equivalent points walk identically,
+			// giving sqrt(6)/sqrt(2) = sqrt(3) ~ 1.73x speedup.
+			if (Kparams.IsEquiv6)
+			{
+				u32 equiv_tag = Canonicalize6(x, y);
+				jmp_ind |= (equiv_tag << EQUIV6_TAG_SHIFT);
+			}
+
+			SAVE_VAL_256(L2x, x, group);
 			SAVE_VAL_256(L2y, y, group);
 
 			if (((L1S2 >> group) & 1) == 0) //normal mode, check L1S2 loop
@@ -170,7 +181,9 @@ __global__ void KernelA(const TKparams Kparams)
 				L1S2 &= ~(1u << group);
 				jmp_ind |= JMP2_FLAG;
 			}
-			
+
+			// DP check: in equiv6 mode, x is already canonical (smallest of 3)
+			// so we only need one DP check. Without equiv6, check all 3 x-variants.
 			if ((x[3] & dp_mask64) == 0)
 			{
 				u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
@@ -180,11 +193,10 @@ __global__ void KernelA(const TKparams Kparams)
 				dst[0] = ((int4*)x)[0];
 				jmp_ind |= DP_FLAG;
 			}
-			else
+			else if (!Kparams.IsEquiv6)
 			{
-				// Endomorphism-augmented DP check: also check beta*x for DP condition
-				// phi(x,y) = (beta*x, y) -- if beta*x is a DP, emit it
-				// This triples effective DP detection rate (check x, beta*x, beta^2*x)
+				// Without equiv6: endomorphism-augmented DP check
+				// Check beta*x and beta^2*x for DP condition (3x detection rate)
 				__align__(16) u64 bx[4];
 				MulByBeta(bx, x);
 				if ((bx[3] & dp_mask64) == 0)
@@ -193,12 +205,11 @@ __global__ void KernelA(const TKparams Kparams)
 					u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
 					ind = min(ind, DPTABLE_MAX_CNT - 1);
 					int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-					dst[0] = ((int4*)bx)[0]; // store beta*x as the DP
+					dst[0] = ((int4*)bx)[0];
 					jmp_ind |= DP_FLAG | ENDO_FLAG;
 				}
 				else
 				{
-					// Check beta^2 * x (phi^2)
 					__align__(16) u64 b2x[4];
 					MulByBeta(b2x, bx);
 					if ((b2x[3] & dp_mask64) == 0)
@@ -207,7 +218,7 @@ __global__ void KernelA(const TKparams Kparams)
 						u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
 						ind = min(ind, DPTABLE_MAX_CNT - 1);
 						int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-						dst[0] = ((int4*)b2x)[0]; // store beta^2*x
+						dst[0] = ((int4*)b2x)[0];
 						jmp_ind |= DP_FLAG | ENDO_FLAG;
 					}
 				}
@@ -422,11 +433,19 @@ __global__ void KernelA(const TKparams Kparams)
 
 			SubModP(x, tmp2, jmp_x);
 			SubModP(x, x, x0);
-			SAVE_VAL_256_m(Lx, x, group);
 
 			SubModP(y, x0, x);
 			MulModP(y, y, tmp);
 			SubModP(y, y, y0);
+
+			// 6-class equivalence walk canonicalization (OLD_GPU path)
+			if (Kparams.IsEquiv6)
+			{
+				u32 equiv_tag = Canonicalize6(x, y);
+				jmp_ind |= (equiv_tag << EQUIV6_TAG_SHIFT);
+			}
+
+			SAVE_VAL_256_m(Lx, x, group);
 			SAVE_VAL_256_m(Ly, y, group);
 
 			if (((L1S2 >> group) & 1) == 0) //normal mode, check L1S2 loop
@@ -449,6 +468,36 @@ __global__ void KernelA(const TKparams Kparams)
 				int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
 				dst[0] = ((int4*)x)[0];
 				jmp_ind |= DP_FLAG;
+			}
+			else if (!Kparams.IsEquiv6)
+			{
+				// Endomorphism-augmented DP check (only when not using equiv6)
+				__align__(16) u64 bx[4];
+				MulByBeta(bx, x);
+				if ((bx[3] & dp_mask64) == 0)
+				{
+					u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
+					u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
+					ind = min(ind, DPTABLE_MAX_CNT - 1);
+					int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
+					dst[0] = ((int4*)bx)[0];
+					jmp_ind |= DP_FLAG | ENDO_FLAG;
+				}
+				else
+				{
+					// Check beta^2 * x (phi^2)
+					__align__(16) u64 b2x[4];
+					MulByBeta(b2x, bx);
+					if ((b2x[3] & dp_mask64) == 0)
+					{
+						u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
+						u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
+						ind = min(ind, DPTABLE_MAX_CNT - 1);
+						int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
+						dst[0] = ((int4*)b2x)[0]; // store beta^2*x
+						jmp_ind |= DP_FLAG | ENDO_FLAG;
+					}
+				}
 			}
 
 			lds_jlist[8 * THREAD_X + (group % 8)] = jmp_ind;

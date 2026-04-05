@@ -64,6 +64,7 @@ public:
 	int KangCnt;
 	bool Failed;
 	bool IsOldGpu;
+	bool IsBlackwell;
 
 	int CalcKangCnt();
 	bool Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJumps1, EcJMP* _EcJumps2, EcJMP* _EcJumps3);

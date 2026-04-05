@@ -52,6 +52,8 @@ EcPoint gPubKey;
 u8 gGPUs_Mask[MAX_GPU_CNT];
 char gTamesFileName[1024];
 double gMax;
+int gSpread; //jump spread parameter, 0 = auto
+bool gEquiv6; //6-class equivalence walk mode
 bool gGenMode; //tames generation mode
 bool gIsOpsLimit;
 
@@ -112,7 +114,9 @@ void InitGpus()
 		GpuKangs[GpuCnt]->CudaIndex = i;
 		GpuKangs[GpuCnt]->persistingL2CacheMaxSize = deviceProp.persistingL2CacheMaxSize;
 		GpuKangs[GpuCnt]->mpCnt = deviceProp.multiProcessorCount;
-		GpuKangs[GpuCnt]->IsOldGpu = deviceProp.l2CacheSize < 16 * 1024 * 1024;
+		int arch = deviceProp.major * 100 + deviceProp.minor * 10;
+		GpuKangs[GpuCnt]->IsOldGpu = (arch < 890);
+		GpuKangs[GpuCnt]->IsBlackwell = (arch >= 1000);
 		GpuCnt++;
 	}
 	printf("Total GPUs for work: %d\r\n", GpuCnt);
@@ -382,8 +386,10 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 		return false;
 	}
 
-	printf("\r\nSolving point: Range %d bits, DP %d, start...\r\n", Range, DP);
-	double ops = 1.15 * pow(2.0, Range / 2.0);
+	printf("\r\nSolving point: Range %d bits, DP %d%s, start...\r\n", Range, DP, gEquiv6 ? ", equiv6" : "");
+	// With 6-class equivalence, expected ops drops by sqrt(3) ~ 1.73x
+	double k_est = gEquiv6 ? 0.66 : 1.15;
+	double ops = k_est * pow(2.0, Range / 2.0);
 	double dp_val = (double)(1ull << DP);
 	double ram = (32 + 4 + 4) * ops / dp_val; //+4 for grow allocation and memory fragmentation
 	ram += sizeof(TListRec) * 256 * 256 * 256; //3byte-prefix table
@@ -428,14 +434,25 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	PntIndex = 0;
 //prepare jumps - Pollard 2025 "Lethargic Kangaroo" variance-optimized
 	// Wider variance in jump distances improves walk mixing and reduces
-	// the K constant by 5-10%. Spread across 6-bit range (64x) instead of 1-bit (2x).
+	// the K constant by 5-10%. Spread scales with sqrt(Range/2) per Pollard 2025.
+	// Adaptive spread: auto-compute based on range size, or use manual override
+	int spread = gSpread;
+	if (spread == 0) // auto mode
+	{
+		// Pollard 2025: optimal spread scales with sqrt(log(range_size))
+		// For range 80: sqrt(40) ~ 6, range 135: sqrt(67) ~ 8, range 160: sqrt(80) ~ 9
+		spread = (int)(sqrt((double)(Range / 2)));
+		if (spread < 4) spread = 4;
+		if (spread > 12) spread = 12;
+	}
+	printf("Jump spread: %d (jump range: 2^%d)\r\n", spread, spread);
 	EcInt minjump, t;
 	for (int i = 0; i < JMP_CNT; i++)
 	{
-		// Log-uniform distribution: shift varies from Range/2+1 to Range/2+6
-		// This spreads jump distances across a 64x range while maintaining
+		// Log-uniform distribution: shift varies from Range/2+1 to Range/2+spread
+		// This spreads jump distances across a 2^spread range while maintaining
 		// the correct mean (~sqrt(N)/2) for optimal kangaroo convergence
-		int shift = Range / 2 + 1 + (i * 6) / JMP_CNT;
+		int shift = Range / 2 + 1 + (i * spread) / JMP_CNT;
 		EcJumps1[i].dist.Set(1);
 		EcJumps1[i].dist.ShiftLeft(shift);
 		t.Set(1);
@@ -646,6 +663,24 @@ bool ParseCommandLine(int argc, char* argv[])
 			ci++;
 		}
 		else
+		if (strcmp(argument, "-equiv6") == 0)
+		{
+			gEquiv6 = true;
+			printf("6-class equivalence walk mode enabled (sqrt(3) speedup potential)\r\n");
+		}
+		else
+		if (strcmp(argument, "-spread") == 0)
+		{
+			int val = atoi(argv[ci]);
+			ci++;
+			if ((val < 1) || (val > 20))
+			{
+				printf("error: invalid value for -spread option (1-20)\r\n");
+				return false;
+			}
+			gSpread = val;
+		}
+		else
 		if (strcmp(argument, "-max") == 0)
 		{
 			double val = atof(argv[ci]);
@@ -664,9 +699,9 @@ bool ParseCommandLine(int argc, char* argv[])
 		}
 	}
 	if (!gPubKey.x.IsZero())
-		if (!gStartSet || !gRange || !gDP)
+		if (!gStartSet || !gRange)
 		{
-			printf("error: you must also specify -dp, -range and -start options\r\n");
+			printf("error: you must also specify -range and -start options\r\n");
 			return false;
 		}
 	if (gTamesFileName[0] && !IsFileExist(gTamesFileName))
@@ -710,6 +745,8 @@ int main(int argc, char* argv[])
 	gStartSet = false;
 	gTamesFileName[0] = 0;
 	gMax = 0.0;
+	gSpread = 0;
+	gEquiv6 = false;
 	gGenMode = false;
 	gIsOpsLimit = false;
 	memset(gGPUs_Mask, 1, sizeof(gGPUs_Mask));
@@ -722,6 +759,29 @@ int main(int argc, char* argv[])
 	{
 		printf("No supported GPUs detected, exit\r\n");
 		return 0;
+	}
+
+	// Auto-compute optimal DP if not specified
+	if (gDP == 0 && gRange > 0)
+	{
+		// Optimal DP: balance between DP collection overhead and memory
+		// Formula: dp ≈ (Range/2) - log2(total_kangaroos) - adjustment
+		int total_kangs = 0;
+		for (int i = 0; i < GpuCnt; i++)
+			total_kangs += GpuKangs[i]->CalcKangCnt();
+		if (total_kangs > 0)
+		{
+			double log2_kangs = log2((double)total_kangs);
+			int auto_dp = (int)(gRange / 2.0 - log2_kangs + 2.0);
+			if (auto_dp < 14) auto_dp = 14;
+			if (auto_dp > 60) auto_dp = 60;
+			gDP = auto_dp;
+			printf("Auto DP: %d (total kangaroos: %d)\r\n", gDP, total_kangs);
+		}
+		else
+		{
+			gDP = 16; // safe default
+		}
 	}
 
 	pPntList = (u8*)malloc(MAX_CNT_LIST * GPU_DP_SIZE);

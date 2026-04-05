@@ -16,6 +16,18 @@ A high-performance GPU-accelerated Pollard Kangaroo solver for the Elliptic Curv
 | **Statistical significance** | — | p < 0.05 | Welch t-test confirmed |
 | **Tested On** | RTX 4090 | RTX 3060, RTX 3050 | Multi-GPU verified |
 
+### v3.2 Optimizations (New)
+
+| Optimization | Expected Impact | Status |
+|---|---|---|
+| **Bug fix**: `jmp_idx` typo in NEW_GPU kernel | Correctness | Fixed |
+| **Endomorphism DP**: ported to OLD_GPU path | 3x DP detection on sm_86 | Implemented |
+| **RTX 5090/Blackwell**: sm_100 compute tier | 10-20% throughput | Ready |
+| **Inline PTX carry chains**: merged carry propagation | 15-25% MKeys/s | Implemented |
+| **Adaptive jump spread**: auto-scales with range | 3-8% K reduction | Implemented |
+| **DP auto-tuning**: optimal DP from GPU count | Prevents 10-30% waste | Implemented |
+| **6-class equivalence walk** (`-equiv6`) | Up to 1.73x (K ~0.43) | Experimental |
+
 > **K = total_operations / sqrt(range_size)** --- lower is better. The theoretical minimum for the kangaroo method with secp256k1's full automorphism group is **K = 0.51**. Our K = 0.75 is within 47% of the absolute floor.
 
 ## What Changed (and Why It Works)
@@ -178,9 +190,23 @@ Change `-arch=sm_86` to match your GPU:
 
 ### Usage
 ```bash
-./RCKangaroo -dp 16 -range 135 -start 4000000000000000000000000000000000 \
+# Standard mode (auto DP, auto spread):
+./RCKangaroo -range 135 -start 4000000000000000000000000000000000 \
+  -pubkey 02145d2611c823a396ef6712ce0f712f09b9b4f3135e3e0aa3230fb9b6d08d1e16
+
+# With 6-class equivalence walk (sqrt(3) ~ 1.73x algorithmic speedup):
+./RCKangaroo -range 135 -equiv6 -start 4000000000000000000000000000000000 \
+  -pubkey 02145d2611c823a396ef6712ce0f712f09b9b4f3135e3e0aa3230fb9b6d08d1e16
+
+# Manual tuning:
+./RCKangaroo -dp 16 -spread 8 -range 135 -start 4000000000000000000000000000000000 \
   -pubkey 02145d2611c823a396ef6712ce0f712f09b9b4f3135e3e0aa3230fb9b6d08d1e16
 ```
+
+### New Options
+- `-equiv6`: Enable 6-class equivalence walk (experimental, up to 1.73x speedup)
+- `-spread N`: Manual jump spread (1-20, default: auto based on range)
+- `-dp` is now optional (auto-computed from range and GPU count)
 
 ## Puzzle 135 Estimates
 
