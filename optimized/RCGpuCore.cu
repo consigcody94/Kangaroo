@@ -182,8 +182,6 @@ __global__ void KernelA(const TKparams Kparams)
 				jmp_ind |= JMP2_FLAG;
 			}
 
-			// DP check: in equiv6 mode, x is already canonical (smallest of 3)
-			// so we only need one DP check. Without equiv6, check all 3 x-variants.
 			if ((x[3] & dp_mask64) == 0)
 			{
 				u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
@@ -192,36 +190,6 @@ __global__ void KernelA(const TKparams Kparams)
 				int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
 				dst[0] = ((int4*)x)[0];
 				jmp_ind |= DP_FLAG;
-			}
-			else if (!Kparams.IsEquiv6)
-			{
-				// Without equiv6: endomorphism-augmented DP check
-				// Check beta*x and beta^2*x for DP condition (3x detection rate)
-				__align__(16) u64 bx[4];
-				MulByBeta(bx, x);
-				if ((bx[3] & dp_mask64) == 0)
-				{
-					u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
-					u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
-					ind = min(ind, DPTABLE_MAX_CNT - 1);
-					int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-					dst[0] = ((int4*)bx)[0];
-					jmp_ind |= DP_FLAG | ENDO_FLAG;
-				}
-				else
-				{
-					__align__(16) u64 b2x[4];
-					MulByBeta(b2x, bx);
-					if ((b2x[3] & dp_mask64) == 0)
-					{
-						u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
-						u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
-						ind = min(ind, DPTABLE_MAX_CNT - 1);
-						int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-						dst[0] = ((int4*)b2x)[0];
-						jmp_ind |= DP_FLAG | ENDO_FLAG;
-					}
-				}
 			}
 
 			lds_jlist[8 * THREAD_X + (group % 8)] = jmp_ind;
@@ -468,36 +436,6 @@ __global__ void KernelA(const TKparams Kparams)
 				int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
 				dst[0] = ((int4*)x)[0];
 				jmp_ind |= DP_FLAG;
-			}
-			else if (!Kparams.IsEquiv6)
-			{
-				// Endomorphism-augmented DP check (only when not using equiv6)
-				__align__(16) u64 bx[4];
-				MulByBeta(bx, x);
-				if ((bx[3] & dp_mask64) == 0)
-				{
-					u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
-					u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
-					ind = min(ind, DPTABLE_MAX_CNT - 1);
-					int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-					dst[0] = ((int4*)bx)[0];
-					jmp_ind |= DP_FLAG | ENDO_FLAG;
-				}
-				else
-				{
-					// Check beta^2 * x (phi^2)
-					__align__(16) u64 b2x[4];
-					MulByBeta(b2x, bx);
-					if ((b2x[3] & dp_mask64) == 0)
-					{
-						u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
-						u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
-						ind = min(ind, DPTABLE_MAX_CNT - 1);
-						int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-						dst[0] = ((int4*)b2x)[0]; // store beta^2*x
-						jmp_ind |= DP_FLAG | ENDO_FLAG;
-					}
-				}
 			}
 
 			lds_jlist[8 * THREAD_X + (group % 8)] = jmp_ind;

@@ -52,9 +52,9 @@ nvcc -O2 -arch=sm_86 -o RCKangaroo Ec.cpp RCKangaroo.cpp GpuKang.cpp RCGpuCore.c
 nvcc -O2 -arch=sm_89 -o RCKangaroo Ec.cpp RCKangaroo.cpp GpuKang.cpp RCGpuCore.cu utils.cpp -lcuda
 ```
 
-### RTX 5090 (sm_100):
+### RTX 5090 (sm_120, NOT sm_100):
 ```bash
-nvcc -O2 -arch=sm_100 -o RCKangaroo Ec.cpp RCKangaroo.cpp GpuKang.cpp RCGpuCore.cu utils.cpp -lcuda
+nvcc -O2 -arch=sm_120 -o RCKangaroo Ec.cpp RCKangaroo.cpp GpuKang.cpp RCGpuCore.cu utils.cpp -lcuda
 ```
 
 ## Testing Protocol

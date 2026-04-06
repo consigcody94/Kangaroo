@@ -30,8 +30,10 @@ typedef char i8;
 #define PNT_GROUP_NEW_GPU	24
 //can be 8, 16, 24, 32, 40, 48, 56, 64
 #define PNT_GROUP_OLD_GPU	64
-//Blackwell (RTX 5090): larger register file, 192KB L2/SM
-#define PNT_GROUP_BLACKWELL	32
+//Blackwell (RTX 5090, sm_120): 96MB L2 total, 170 SMs
+//24 kangs * 256 threads * 170 SMs * 96 bytes = 95.6 MB (fits 96MB L2)
+//32 kangs would be 127 MB — overflows L2, killing persisting cache optimization
+#define PNT_GROUP_BLACKWELL	24
 
 #define BLOCK_SIZE_NEW_GPU	256
 #define BLOCK_SIZE_OLD_GPU	512
