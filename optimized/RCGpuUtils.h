@@ -487,7 +487,10 @@ __device__ __forceinline__ u32 Canonicalize6(u64* x, u64* y)
 {
 	__align__(16) u64 bx[4], b2x[4];
 	MulByBeta(bx, x);
-	MulByBeta(b2x, bx);
+	// beta^2 + beta + 1 = 0 mod p, so beta^2*x = -(beta*x + x)
+	// Replaces a full MulModP (~100 instructions) with add+negate (~12)
+	AddModP(b2x, bx, x);
+	NegModP(b2x);
 
 	// Find smallest x-coordinate among {x, bx, b2x}
 	u32 tag = 0; // default: identity or negation
