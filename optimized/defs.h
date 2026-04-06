@@ -113,10 +113,13 @@ typedef char i8;
 #define ENDO_BETA2_3 0x851695d49a83f8efULL
 
 // lambda^2 mod n (for distance recovery in 6-class walk)
-#define ENDO_LAMBDA2_0 0xe4437ed6010e8828ULL
-#define ENDO_LAMBDA2_1 0x7fffffffffffffffULL
-#define ENDO_LAMBDA2_2 0x5d576e7357a4501dULL
-#define ENDO_LAMBDA2_3 0xac9c52b33fa3db8bULL
+// Correct value: lambda^2 mod n = n - lambda - 1
+// = 0xAC9C52B33FA3CF1F 5AD9E3FD77ED9BA4 A880B9FC8EC739C2 E0CFC810B51283CE
+// Verified against PSCKangaroo v55 fix for the same bug
+#define ENDO_LAMBDA2_0 0xe0cfc810b51283ceULL
+#define ENDO_LAMBDA2_1 0xa880b9fc8ec739c2ULL
+#define ENDO_LAMBDA2_2 0x5ad9e3fd77ed9ba4ULL
+#define ENDO_LAMBDA2_3 0xac9c52b33fa3cf1fULL
 
 //#define DEBUG_MODE
 
