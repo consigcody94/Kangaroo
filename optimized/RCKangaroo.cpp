@@ -435,7 +435,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 		// Log-uniform distribution: shift varies from Range/2+1 to Range/2+6
 		// This spreads jump distances across a 64x range while maintaining
 		// the correct mean (~sqrt(N)/2) for optimal kangaroo convergence
-		int shift = Range / 2 + 1 + (i * 6) / JMP_CNT;
+		int shift = Range / 2 - 4 + (i * 6) / JMP_CNT;
 		EcJumps1[i].dist.Set(1);
 		EcJumps1[i].dist.ShiftLeft(shift);
 		t.Set(1);
