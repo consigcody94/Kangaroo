@@ -96,9 +96,3 @@ K directly scales time-to-solution: `time ∝ K × √(2^range)`.
 3. `Ec.cpp` — Earlier Linux compat + SqrtModP optimization
 4. `Ec.h` — Jacobian coordinate types
 5. `utils.h` — Cross-platform compatibility
-# Mathematical Breakthrough
-
-1. By harnessing the "Flower of Life" symmetry inherent in secp256k1's GLV endomorphism mapping (order 6 automorphism group), we expand the kangaroo groups.
-2. The initial codebase had `WILD1`, `WILD2` mapped, and a `PntC` precomputed as `phi(PntA)` (which is `beta * PntA.x, PntA.y`) but it was NEVER assigned to any kangaroo herd because the code only divided kangaroos into 3 sections (`KangCnt / 3`).
-3. By dividing kangaroos into 4 sections (`KangCnt / 4`), we deploy a 4th herd (`WILD3`) starting at `PntC`.
-4. Furthermore, because `BuildDP` detects `x`, `beta * x`, and `beta^2 * x` AND uses +/- y symmetry implicitly via x-coordinate masks, deploying a herd at `phi(PntA)` means we are now exploring paths that mathematically trace the equivalent of all 6 classes of the automorphism group in collision resolution. The `WILD3` collision invokes the existing unused logic: `key - HalfRange = lambda^(-1) * (diff*G)`.

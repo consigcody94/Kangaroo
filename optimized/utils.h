@@ -51,12 +51,12 @@
     // GCC 15+ provides _addcarry_u64/_subborrow_u64 via adxintrin.h
     // Only define our own if they're not already available
     #if __GNUC__ < 15 && !defined(__INTEL_COMPILER)
-    static __inline__ __attribute__((always_inline)) u8 _addcarry_u64(u8 carry_in, u64 a, u64 b, u64* out) {
+    static inline u8 _addcarry_u64(u8 carry_in, u64 a, u64 b, u64* out) {
         uint128_t sum = (uint128_t)a + b + carry_in;
         *out = (u64)sum;
         return (u8)(sum >> 64);
     }
-    static __inline__ __attribute__((always_inline)) u8 _subborrow_u64(u8 borrow_in, u64 a, u64 b, u64* out) {
+    static inline u8 _subborrow_u64(u8 borrow_in, u64 a, u64 b, u64* out) {
         uint128_t diff = (uint128_t)a - b - borrow_in;
         *out = (u64)diff;
         return (u8)(diff >> 127); // borrow flag in high bit
