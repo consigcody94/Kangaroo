@@ -127,8 +127,8 @@ __global__ void KernelA(const TKparams Kparams)
 			jmp_ind = JumpHash(x0);
 			
 			jmp_table = ((L1S2 >> group) & 1) ? jmp2_table : jmp1_table;
-			Copy_int4_x2(jmp_x, jmp_table + 8 * jmp_idx);
-			Copy_int4_x2(jmp_y, jmp_table + 8 * jmp_idx + 4);
+			Copy_int4_x2(jmp_x, jmp_table + 8 * jmp_ind);
+			Copy_int4_x2(jmp_y, jmp_table + 8 * jmp_ind + 4);
 				NegModP(jmp_y);
 			u32 inv_flag = (u32)y0[0] & 1;
 			if (inv_flag)

@@ -8,11 +8,10 @@
 #include <vector>
 
 #include "cuda_runtime.h"
-#include "cuda.h"
-
 #include "defs.h"
 #include "utils.h"
 #include "GpuKang.h"
+#include "SECPK1/Int.h"
 
 
 EcJMP EcJumps1[JMP_CNT];
@@ -201,8 +200,20 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 				// For now, try extracting via the inverse endomorphism on the scalar
 				// diff = lambda * (key - HalfRange) => key = diff * lambda^(-1) + HalfRange
 				// lambda^(-1) = lambda^2 mod n
-				// This needs MulModN which we approximate by trying the point
-				gPrivKey = diff; // placeholder — we verify via point check below
+				EcInt l2;
+				l2.data[0] = 0xe4437ed6010e8828ULL; l2.data[1] = 0x7fffffffffffffffULL;
+				l2.data[2] = 0x5363ad4cc05c30e0ULL; l2.data[3] = 0xa5261c028812645aULL;
+				l2.data[4] = 0;
+
+				Int d_int, l2_int;
+				d_int.Set((uint64_t*)diff.data);
+				l2_int.Set((uint64_t*)l2.data);
+				d_int.ModMulK1order(&l2_int);
+
+				// Copy back
+				memcpy(gPrivKey.data, d_int.GetQWordArray(), 32);
+				gPrivKey.data[4] = 0;
+
 				gPrivKey.Add(Int_HalfRange);
 				P = ec.MultiplyG(gPrivKey);
 				if (P.IsEqual(pnt))
@@ -214,8 +225,21 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 			candidate = ec.AddPoints(Pinv, hrPnt);
 			if (candidate.IsEqual(pnt))
 			{
-				gPrivKey = diff;
-				gPrivKey.Neg();
+				EcInt l2;
+				l2.data[0] = 0xe4437ed6010e8828ULL; l2.data[1] = 0x7fffffffffffffffULL;
+				l2.data[2] = 0x5363ad4cc05c30e0ULL; l2.data[3] = 0xa5261c028812645aULL;
+				l2.data[4] = 0;
+
+				Int d_int, l2_int;
+				d_int.Set((uint64_t*)diff.data);
+				l2_int.Set((uint64_t*)l2.data);
+				d_int.ModNegK1order();
+				d_int.ModMulK1order(&l2_int);
+
+				// Copy back
+				memcpy(gPrivKey.data, d_int.GetQWordArray(), 32);
+				gPrivKey.data[4] = 0;
+
 				gPrivKey.Add(Int_HalfRange);
 				P = ec.MultiplyG(gPrivKey);
 				if (P.IsEqual(pnt))
@@ -435,7 +459,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 		// Log-uniform distribution: shift varies from Range/2+1 to Range/2+6
 		// This spreads jump distances across a 64x range while maintaining
 		// the correct mean (~sqrt(N)/2) for optimal kangaroo convergence
-		int shift = Range / 2 - 4 + (i * 6) / JMP_CNT;
+		int shift = Range / 2 + 1 + (i * 6) / JMP_CNT;
 		EcJumps1[i].dist.Set(1);
 		EcJumps1[i].dist.ShiftLeft(shift);
 		t.Set(1);
