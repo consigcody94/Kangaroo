@@ -7,6 +7,8 @@
 #include "defs.h"
 #include "RCGpuUtils.h"
 
+// GS_MODE defined in defs.h
+
 //imp2 table points for KernelA
 __device__ __constant__ u64 jmp2_table[8 * JMP_CNT];
 
@@ -32,6 +34,16 @@ __device__ __forceinline__ u32 JumpHash(u64* x)
 	return h & JMP_MASK;
 }
 
+// Extended hash: returns jump index + NEG_FLAG bit for negative jumps
+// Uses bit 9 of hash to decide add vs subtract, doubling effective jump diversity
+__device__ __forceinline__ u32 JumpHashNeg(u64* x)
+{
+	u32 h = (u32)x[0] ^ (u32)(x[0] >> 32) ^ (u32)x[1] ^ (u32)(x[1] >> 32)
+	       ^ (u32)x[2] ^ (u32)(x[2] >> 32) ^ (u32)x[3] ^ (u32)(x[3] >> 32);
+	u32 idx = h & JMP_MASK;
+	u32 neg = (h >> 9) & 1;  // Use bit 9 for sign
+	return idx | (neg ? NEG_FLAG : 0);
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -97,7 +109,11 @@ __global__ void KernelA(const TKparams Kparams)
 		
 		//first group
 		LOAD_VAL_256(x, L2x, 0);
-		jmp_ind = JumpHash(x);
+#ifdef GS_MODE
+		{ __align__(16) u64 cx[4]; CanonicalX(cx, x); jmp_ind = JumpHash(cx); }
+#else
+		{ __align__(16) u64 cx[4]; CanonicalX(cx, x); jmp_ind = JumpHash(cx); }
+#endif
 		jmp_table = ((L1S2 >> 0) & 1) ? jmp2_table : jmp1_table;
 		Copy_int4_x2(jmp_x, jmp_table + 8 * jmp_ind);
 		SubModP(inverse, x, jmp_x);
@@ -106,7 +122,11 @@ __global__ void KernelA(const TKparams Kparams)
 		for (int group = 1; group < PNT_GROUP_CNT; group++)
 		{
 			LOAD_VAL_256(x, L2x, group);
-			jmp_ind = JumpHash(x);
+#ifdef GS_MODE
+			{ __align__(16) u64 cx[4]; CanonicalX(cx, x); jmp_ind = JumpHash(cx); }
+#else
+			{ __align__(16) u64 cx[4]; CanonicalX(cx, x); jmp_ind = JumpHash(cx); }
+#endif
 			jmp_table = ((L1S2 >> group) & 1) ? jmp2_table : jmp1_table;
 			Copy_int4_x2(jmp_x, jmp_table + 8 * jmp_ind);
 			SubModP(tmp, x, jmp_x);
@@ -124,16 +144,15 @@ __global__ void KernelA(const TKparams Kparams)
 
 			LOAD_VAL_256(x0, L2x, group);
             LOAD_VAL_256(y0, L2y, group);
+#ifdef GS_MODE
 			__align__(16) u64 cx_back[4];
-			{
-				CanonicalX(cx_back, x0);
-				jmp_ind = JumpHash(cx_back);
-			}
-			
+			{ CanonicalX(cx_back, x0); jmp_ind = JumpHash(cx_back); }
+#else
+			{ __align__(16) u64 cx[4]; CanonicalX(cx, x0); jmp_ind = JumpHash(cx); }
+#endif
 			jmp_table = ((L1S2 >> group) & 1) ? jmp2_table : jmp1_table;
 			Copy_int4_x2(jmp_x, jmp_table + 8 * jmp_ind);
 			Copy_int4_x2(jmp_y, jmp_table + 8 * jmp_ind + 4);
-				NegModP(jmp_y);
 			u32 inv_flag = (u32)y0[0] & 1;
 			if (inv_flag)
 			{
@@ -163,9 +182,19 @@ __global__ void KernelA(const TKparams Kparams)
 			SubModP(y, y, y0);
 			SAVE_VAL_256(L2y, y, group);
 
+			// GS: compute canonical x of NEW point ONCE, reuse for loop check + DP check
+#ifdef GS_MODE
+			__align__(16) u64 canon_new[4];
+			u32 equiv_new = Canonicalize(canon_new, x, y);
+#endif
+
 			if (((L1S2 >> group) & 1) == 0) //normal mode, check L1S2 loop
 			{
-				u32 jmp_next = JumpHash(x);
+#ifdef GS_MODE
+				u32 jmp_next = JumpHash(canon_new);
+#else
+				u32 jmp_next; { __align__(16) u64 cx[4]; CanonicalX(cx, x); jmp_next = JumpHash(cx); }
+#endif
 				jmp_next |= ((u32)y[0] & 1) ? 0 : INV_FLAG; //inverted
 				L1S2 |= (jmp_ind == jmp_next) ? (1u << group) : 0; //loop L1S2 detected
 			}
@@ -174,7 +203,19 @@ __global__ void KernelA(const TKparams Kparams)
 				L1S2 &= ~(1u << group);
 				jmp_ind |= JMP2_FLAG;
 			}
-			
+
+#ifdef GS_MODE
+			// GS mode: use pre-computed canonical x for DP check
+			if ((canon_new[3] & dp_mask64) == 0)
+			{
+				u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
+				u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
+				ind = min(ind, DPTABLE_MAX_CNT - 1);
+				int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
+				dst[0] = ((int4*)canon_new)[0];
+				jmp_ind |= DP_FLAG;
+			}
+#else
 			if ((x[3] & dp_mask64) == 0)
 			{
 				u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
@@ -186,9 +227,6 @@ __global__ void KernelA(const TKparams Kparams)
 			}
 			else
 			{
-				// Endomorphism-augmented DP check: also check beta*x for DP condition
-				// phi(x,y) = (beta*x, y) -- if beta*x is a DP, emit it
-				// This triples effective DP detection rate (check x, beta*x, beta^2*x)
 				__align__(16) u64 bx[4];
 				MulByBeta(bx, x);
 				if ((bx[3] & dp_mask64) == 0)
@@ -197,12 +235,11 @@ __global__ void KernelA(const TKparams Kparams)
 					u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
 					ind = min(ind, DPTABLE_MAX_CNT - 1);
 					int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-					dst[0] = ((int4*)bx)[0]; // store beta*x as the DP
+					dst[0] = ((int4*)bx)[0];
 					jmp_ind |= DP_FLAG | ENDO_FLAG;
 				}
 				else
 				{
-					// Check beta^2 * x (phi^2)
 					__align__(16) u64 b2x[4];
 					MulByBeta(b2x, bx);
 					if ((b2x[3] & dp_mask64) == 0)
@@ -211,11 +248,12 @@ __global__ void KernelA(const TKparams Kparams)
 						u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
 						ind = min(ind, DPTABLE_MAX_CNT - 1);
 						int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-						dst[0] = ((int4*)b2x)[0]; // store beta^2*x
+						dst[0] = ((int4*)b2x)[0];
 						jmp_ind |= DP_FLAG | ENDO_FLAG;
 					}
 				}
 			}
+#endif
 
 			lds_jlist[8 * THREAD_X + (group % 8)] = jmp_ind;
 			if ((group % 8) == 0)
@@ -318,7 +356,7 @@ __global__ void KernelA(const TKparams Kparams)
 	for (int group = 0; group < PNT_GROUP_CNT; group++)
 	{
 		LOAD_VAL_256_m(x, Lx, group);
-		jmp_ind = JumpHash(x);
+		{ __align__(16) u64 cx[4]; CanonicalX(cx, x); jmp_ind = JumpHash(cx); }
 		jmp_table = ((L1S2 >> group) & 1) ? jmp2_table : jmp1_table;
 		Copy_int4_x2(jmp_x, jmp_table + 8 * jmp_ind);
 		SubModP(tmp, x, jmp_x);
@@ -366,7 +404,7 @@ __global__ void KernelA(const TKparams Kparams)
 			}
 			LOAD_VAL_256_m(y0, Ly, group);
 
-			jmp_ind = JumpHash(x0);
+			{ __align__(16) u64 cx[4]; CanonicalX(cx, x0); jmp_ind = JumpHash(cx); }
 			jmp_table = ((L1S2 >> group) & 1) ? jmp2_table : jmp1_table;
 			if (cached)
 			{
@@ -407,7 +445,7 @@ __global__ void KernelA(const TKparams Kparams)
 					LOAD_VAL_256_m(t_cache, Ls, (group + g_inc + g_inc) / 2);
 					cached = true;				
 					LOAD_VAL_256_m(x0_cache, Lx, group + g_inc);
-					u32 jmp_tmp = JumpHash(x0_cache);
+					u32 jmp_tmp; { __align__(16) u64 cx[4]; CanonicalX(cx, x0_cache); jmp_tmp = JumpHash(cx); }
 					__align__(16) u64 dx2[4];
 					u64* jmp_table_tmp = ((L1S2 >> (group + g_inc)) & 1) ? jmp2_table : jmp1_table;
 					Copy_int4_x2(jmpx_cached, jmp_table_tmp + 8 * jmp_tmp);
@@ -435,7 +473,7 @@ __global__ void KernelA(const TKparams Kparams)
 
 			if (((L1S2 >> group) & 1) == 0) //normal mode, check L1S2 loop
 			{
-				u32 jmp_next = JumpHash(x);
+				u32 jmp_next; { __align__(16) u64 cx[4]; CanonicalX(cx, x); jmp_next = JumpHash(cx); }
 				jmp_next |= ((u32)y[0] & 1) ? 0 : INV_FLAG; //inverted
 				L1S2 |= (jmp_ind == jmp_next) ? (1ull << group) : 0; //loop L1S2 detected
 			}
@@ -469,7 +507,7 @@ __global__ void KernelA(const TKparams Kparams)
 			}
 		
 			//preps to calc next inv
-			jmp_ind = JumpHash(x);
+			{ __align__(16) u64 cx[4]; CanonicalX(cx, x); jmp_ind = JumpHash(cx); }
 			jmp_table = ((L1S2 >> group) & 1) ? jmp2_table : jmp1_table;
 			Copy_int4_x2(jmp_x, jmp_table + 8 * jmp_ind);
 			SubModP(dx, x, jmp_x);
@@ -544,7 +582,11 @@ __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u
 	*(int4*)&DPs[0] = rx;
 	*(int4*)&DPs[4] = ((int4*)d)[0];
 	*(u64*)&DPs[8] = d[2];
-	DPs[10] = 0; // GS mode treats all as same type, equivalence resolving does the rest
+#ifdef GS_MODE
+	DPs[10] = 0; // GS mode: equiv class stored separately, type not needed
+#else
+	DPs[10] = 3 * kang_ind / Kparams.KangCnt; //kang type
+#endif
 }
 
 __device__ __forceinline__ bool ProcessJumpDistance(u32 step_ind, u32 d_cur, u64* d, u32 kang_ind, u64* jmp1_d, u64* jmp2_d, const TKparams& Kparams, u64* table, u32* cur_ind, u8 iter)
@@ -555,10 +597,10 @@ __device__ __forceinline__ bool ProcessJumpDistance(u32 step_ind, u32 d_cur, u64
 	((int4*)(jmp))[0] = ((int4*)(jmp_d + 4 * (d_cur & JMP_MASK)))[0];
 	jmp[2] = *(jmp_d + 4 * (d_cur & JMP_MASK) + 2);
 
-	// INV_FLAG = endomorphism negation
+	// INV_FLAG = endomorphism negation, NEG_FLAG = negative jump
 	// XOR: both flags cancel out (double negation)
-	if (d_cur & INV_FLAG)
-	
+	bool subtract = ((d_cur & INV_FLAG) != 0) ^ ((d_cur & NEG_FLAG) != 0);
+	if (subtract)
 		Sub192from192(d, jmp)
 	else
 		Add192to192(d, jmp);
@@ -765,7 +807,7 @@ __global__ void KernelC(const TKparams Kparams)
 		LOAD_VAL_256(x0, x_last, gr_ind);
 		LOAD_VAL_256(y0, y_last, gr_ind);
 
-		u32 jmp_ind = JumpHash(x0);
+		u32 jmp_ind; { __align__(16) u64 cx[4]; CanonicalX(cx, x0); jmp_ind = JumpHash(cx); }
 		Copy_int4_x2(jmp_x, jmp3_table + 12 * jmp_ind);
 		Copy_int4_x2(jmp_y, jmp3_table + 12 * jmp_ind + 4);
 		SubModP(inverse, x0, jmp_x);

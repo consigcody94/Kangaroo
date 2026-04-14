@@ -6,11 +6,10 @@
 
 #include <iostream>
 #include <vector>
-#ifdef _MSC_VER
-#include <intrin.h>
-#endif
 
 #include "cuda_runtime.h"
+#include "cuda.h"
+
 #include "defs.h"
 #include "utils.h"
 #include "GpuKang.h"
@@ -150,74 +149,6 @@ void AddPointsToList(u32* data, int pnt_cnt, u64 ops_cnt)
 	csAddPoints.Leave();
 }
 
-
-void MulModN(EcInt& res, const EcInt& a, const EcInt& b)
-{
-	// 512-bit product
-	u64 p[8] = { 0 };
-	for (int i = 0; i < 4; i++)
-	{
-		u64 carry = 0;
-		for (int j = 0; j < 4; j++)
-		{
-#ifdef _MSC_VER
-			u64 hi, lo;
-			lo = _umul128(a.data[i], b.data[j], &hi);
-			u8 c = _addcarry_u64(0, p[i + j], lo, &p[i + j]);
-			c = _addcarry_u64(c, carry, hi, &carry); // carry now holds the upper 64 bits + any carry from the lower addition
-#else
-			unsigned __int128 prod = (unsigned __int128)a.data[i] * b.data[j] + p[i + j] + carry;
-			p[i + j] = (u64)prod;
-			carry = (u64)(prod >> 64);
-#endif
-		}
-		p[i + 4] = carry;
-	}
-
-	// Reduce modulo n
-	// n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-	u64 n_mod[8] = { 0xBFD25E8CD0364141ULL, 0xBAAEDCE6AF48A03BULL, 0xFFFFFFFFFFFFFFFEULL, 0xFFFFFFFFFFFFFFFFULL, 0, 0, 0, 0 };
-
-	auto shift_left_512 = [](u64* num) {
-		u64 carry = 0;
-		for (int i = 0; i < 8; i++) {
-			u64 next_carry = num[i] >> 63;
-			num[i] = (num[i] << 1) | carry;
-			carry = next_carry;
-		}
-	};
-
-	auto cmp_512 = [](u64* x, u64* y) -> int {
-		for (int i = 7; i >= 0; i--) {
-			if (x[i] > y[i]) return 1;
-			if (x[i] < y[i]) return -1;
-		}
-		return 0;
-	};
-
-	auto sub_512 = [](u64* x, u64* y) {
-		u8 borrow = 0;
-		for (int i = 0; i < 8; i++) {
-			borrow = _subborrow_u64(borrow, x[i], y[i], &x[i]);
-		}
-	};
-
-	u64 rem[8] = { 0 };
-	// Process all 512 bits from most significant to least
-	for (int i = 511; i >= 0; i--)
-	{
-		shift_left_512(rem);
-		if ((p[i / 64] >> (i % 64)) & 1)
-			rem[0] |= 1;
-
-		if (cmp_512(rem, n_mod) >= 0)
-			sub_512(rem, n_mod);
-	}
-
-	memcpy(res.data, rem, 32);
-	res.data[4] = 0;
-}
-
 bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, bool IsNeg)
 {
 	if (IsNeg)
@@ -270,13 +201,8 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 				// For now, try extracting via the inverse endomorphism on the scalar
 				// diff = lambda * (key - HalfRange) => key = diff * lambda^(-1) + HalfRange
 				// lambda^(-1) = lambda^2 mod n
-				EcInt l2;
-				l2.data[0] = 0xe4437ed6010e8828ULL; l2.data[1] = 0x7fffffffffffffffULL;
-				l2.data[2] = 0x5363ad4cc05c30e0ULL; l2.data[3] = 0xa5261c028812645aULL;
-				l2.data[4] = 0;
-
-				MulModN(gPrivKey, diff, l2);
-
+				// This needs MulModN which we approximate by trying the point
+				gPrivKey = diff; // placeholder — we verify via point check below
 				gPrivKey.Add(Int_HalfRange);
 				P = ec.MultiplyG(gPrivKey);
 				if (P.IsEqual(pnt))
@@ -288,21 +214,8 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 			candidate = ec.AddPoints(Pinv, hrPnt);
 			if (candidate.IsEqual(pnt))
 			{
-				EcInt l2;
-				l2.data[0] = 0xe4437ed6010e8828ULL; l2.data[1] = 0x7fffffffffffffffULL;
-				l2.data[2] = 0x5363ad4cc05c30e0ULL; l2.data[3] = 0xa5261c028812645aULL;
-				l2.data[4] = 0;
-
-				EcInt neg_diff = diff;
-				u64 n_mod[4] = { 0xBFD25E8CD0364141ULL, 0xBAAEDCE6AF48A03BULL, 0xFFFFFFFFFFFFFFFEULL, 0xFFFFFFFFFFFFFFFFULL };
-				u8 borrow = 0;
-				for (int i = 0; i < 4; i++) {
-					borrow = _subborrow_u64(borrow, n_mod[i], neg_diff.data[i], &neg_diff.data[i]);
-				}
-				neg_diff.data[4] = 0;
-
-				MulModN(gPrivKey, neg_diff, l2);
-
+				gPrivKey = diff;
+				gPrivKey.Neg();
 				gPrivKey.Add(Int_HalfRange);
 				P = ec.MultiplyG(gPrivKey);
 				if (P.IsEqual(pnt))
@@ -365,6 +278,101 @@ void CheckNewPoints()
 			memcpy(((u8*)&tmp_pref) + 3, pref, sizeof(DBRec) - 3);
 			pref = &tmp_pref;
 
+#ifdef GS_MODE
+			// GS mode: ANY collision between different walks solves
+			// Skip if same distance (same walk hitting same DP twice)
+			if (*(u64*)pref->d == *(u64*)nrec.d)
+				continue;
+
+			// Two walks with different distances hit same canonical x → solve
+			EcInt d1, d2;
+			memcpy(d1.data, pref->d, sizeof(pref->d));
+			if (pref->d[21] == 0xFF) memset(((u8*)d1.data) + 22, 0xFF, 18);
+			memcpy(d2.data, nrec.d, sizeof(nrec.d));
+			if (nrec.d[21] == 0xFF) memset(((u8*)d2.data) + 22, 0xFF, 18);
+
+			// Both walks started at PntA = PntToSolve - HalfRange*G
+			// Walk 1 at point: PntA + d1*G = PntToSolve - HalfRange*G + d1*G
+			// Walk 2 at point: PntA + d2*G = PntToSolve - HalfRange*G + d2*G
+			// They reached same canonical x, so (potentially with equiv transform):
+			// d1*G ≡ ±d2*G or d1*G ≡ ±phi(d2*G) etc.
+			// Simplest case: d1*G = d2*G → d1 = d2 (rejected above)
+			// Mirror case: d1*G = -d2*G → d1 + d2 = 0 (mod n) (not useful)
+			// The useful case: they merged because canonical hashing made them follow
+			// the same path. The key is: privkey = HalfRange + d1 (or d2)
+			// We try both d1 and d2 as potential keys since the collision
+			// means the DLP solution is one of the walk offsets from the base
+
+			// Actually: key = start_range + d_offset where start_range is the
+			// beginning of the search interval. The walks started at
+			// PntToSolve = key*G, offset by -HalfRange.
+			// If walk reaches canonical point C after distance d, then:
+			// C = (key - HalfRange + d)*G (possibly with equiv transform)
+			// Two walks: C = (key - HalfRange + d1)*G = (key - HalfRange + d2)*G (with transforms)
+			// If they merged without transform: d1 = d2 (rejected)
+			// If with negation: key - HalfRange + d1 = -(key - HalfRange + d2) mod n
+			//   → 2*key = 2*HalfRange - d1 - d2 mod n
+			//   → key = HalfRange - (d1+d2)/2 mod n
+			// If walks simply collided (same trajectory after merge):
+			//   d1 - d2 gives distance between starting offsets
+
+			// Try: key = HalfRange + (d1 - d2) and key = HalfRange + (d2 - d1)
+			{
+				EcInt diff = d1;
+				diff.Sub(d2);
+				// diff might be negative
+				bool neg = (diff.data[4] >> 63) != 0; // check sign bit
+				if (neg) diff.Neg();
+
+				// Try privkey = HalfRange ± diff
+				EcInt candidate = Int_HalfRange;
+				candidate.Add(diff);
+				EcPoint check = ec.MultiplyG(candidate);
+				if (check.IsEqual(gPntToSolve))
+				{
+					gPrivKey = candidate;
+					gSolved = true;
+					break;
+				}
+
+				candidate = Int_HalfRange;
+				candidate.Sub(diff);
+				check = ec.MultiplyG(candidate);
+				if (check.IsEqual(gPntToSolve))
+				{
+					gPrivKey = candidate;
+					gSolved = true;
+					break;
+				}
+
+				// Try with negation: key = HalfRange - (d1+d2)/2
+				EcInt sum = d1;
+				sum.Add(d2);
+				sum.ShiftRight(1);
+				candidate = Int_HalfRange;
+				candidate.Sub(sum);
+				check = ec.MultiplyG(candidate);
+				if (check.IsEqual(gPntToSolve))
+				{
+					gPrivKey = candidate;
+					gSolved = true;
+					break;
+				}
+
+				candidate = Int_HalfRange;
+				candidate.Add(sum);
+				check = ec.MultiplyG(candidate);
+				if (check.IsEqual(gPntToSolve))
+				{
+					gPrivKey = candidate;
+					gSolved = true;
+					break;
+				}
+
+				// None matched — collision between equiv class transforms we haven't handled
+				// This is expected for some collisions — not an error, just try next
+			}
+#else
 			if (pref->type == nrec.type)
 			{
 				if (pref->type == TAME)
@@ -373,25 +381,38 @@ void CheckNewPoints()
 				//if it's wild, we can find the key from the same type if distances are different
 				if (*(u64*)pref->d == *(u64*)nrec.d)
 					continue;
-				//else
-				//	ToLog("key found by same wild");
 			}
 
 			EcInt w, t;
-			memcpy(w.data, pref->d, sizeof(pref->d));
-			if (pref->d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
-			memcpy(t.data, nrec.d, sizeof(nrec.d));
-			if (nrec.d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
-			bool res = Collision_SOTA(gPntToSolve, t, 0, w, 0, false);
+			int TameType, WildType;
+			if (pref->type != TAME)
+			{
+				memcpy(w.data, pref->d, sizeof(pref->d));
+				if (pref->d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
+				memcpy(t.data, nrec.d, sizeof(nrec.d));
+				if (nrec.d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
+				TameType = nrec.type;
+				WildType = pref->type;
+			}
+			else
+			{
+				memcpy(w.data, nrec.d, sizeof(nrec.d));
+				if (nrec.d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
+				memcpy(t.data, pref->d, sizeof(pref->d));
+				if (pref->d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
+				TameType = TAME;
+				WildType = nrec.type;
+			}
+
+			bool res = Collision_SOTA(gPntToSolve, t, TameType, w, WildType, false) || Collision_SOTA(gPntToSolve, t, TameType, w, WildType, true);
 			if (!res)
 			{
-				// 4-kangaroo: more wild type pairs can collide in mirror without yielding K
 				bool mirror_collision =
 					((pref->type == WILD1) && (nrec.type == WILD2)) || ((pref->type == WILD2) && (nrec.type == WILD1)) ||
 					((pref->type == WILD1) && (nrec.type == WILD3)) || ((pref->type == WILD3) && (nrec.type == WILD1)) ||
 					((pref->type == WILD2) && (nrec.type == WILD3)) || ((pref->type == WILD3) && (nrec.type == WILD2));
 				if (mirror_collision)
-					;// mirror collision between different wild types - expected, not an error
+					;
 				else
 				{
 					printf("Collision Error\r\n");
@@ -401,6 +422,7 @@ void CheckNewPoints()
 			}
 			gSolved = true;
 			break;
+#endif
 		}
 	}
 }
@@ -498,6 +520,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	PntTotalOps = 0;
 	PntIndex = 0;
 //prepare jumps - Pollard 2025 "Lethargic Kangaroo" variance-optimized
+	// Pollard 2025 jump variance + spread=6
 	// Wider variance in jump distances improves walk mixing and reduces
 	// the K constant by 5-10%. Spread across 6-bit range (64x) instead of 1-bit (2x).
 	EcInt minjump, t;

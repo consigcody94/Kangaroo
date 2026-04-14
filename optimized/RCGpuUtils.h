@@ -389,6 +389,59 @@ __device__ __forceinline__ void MulByBeta(u64* res, u64* x)
 	MulModP(res, x, beta);
 }
 
+__device__ __forceinline__ void MulByBeta2(u64* res, u64* x)
+{
+	u64 beta2[4] = { ENDO_BETA2_0, ENDO_BETA2_1, ENDO_BETA2_2, ENDO_BETA2_3 };
+	MulModP(res, x, beta2);
+}
+
+// Gaudry-Schost: 256-bit unsigned comparison (a < b)
+__device__ __forceinline__ bool IsLessThan256(u64* a, u64* b)
+{
+	if (a[3] != b[3]) return a[3] < b[3];
+	if (a[2] != b[2]) return a[2] < b[2];
+	if (a[1] != b[1]) return a[1] < b[1];
+	return a[0] < b[0];
+}
+
+// Gaudry-Schost: Compute canonical x-coordinate (smallest of x, beta*x, beta^2*x)
+// Used for jump hash selection — walks that reach equivalent points follow same path
+// Returns x-class (0, 2, or 4) and writes canonical x to canon_x
+__device__ __forceinline__ u32 CanonicalX(u64* canon_x, u64* x)
+{
+	__align__(16) u64 bx[4], b2x[4];
+	// Compute beta*x and beta^2*x INDEPENDENTLY (breaks serial dependency)
+	// Each is a single MulModP, but they don't depend on each other
+	MulByBeta(bx, x);
+	MulByBeta2(b2x, x);  // Direct: beta^2 * x, not beta * (beta * x)
+
+	u32 class_idx = 0;
+	Copy_u64_x4(canon_x, x);
+
+	if (IsLessThan256(bx, canon_x))
+	{
+		Copy_u64_x4(canon_x, bx);
+		class_idx = GS_CLASS_BETA;
+	}
+
+	if (IsLessThan256(b2x, canon_x))
+	{
+		Copy_u64_x4(canon_x, b2x);
+		class_idx = GS_CLASS_BETA2;
+	}
+
+	return class_idx;
+}
+
+// Full canonicalization including y-sign for DP records
+__device__ __forceinline__ u32 Canonicalize(u64* canon_x, u64* x, u64* y)
+{
+	u32 class_idx = CanonicalX(canon_x, x);
+	if (y[0] & 1)
+		class_idx |= 1;
+	return class_idx;
+}
+
 __device__ __forceinline__ void add_288(u32* res, u32* val1, u32* val2)
 {
 	add_cc_32(res[0], val1[0], val2[0]);
@@ -636,66 +689,3 @@ __device__ __forceinline__ void InvModP(u32* res)
 		sub_288_P(res);
 }
 
-
-
-// GS_MODE: Multiply by secp256k1 endomorphism beta (cube root of unity)
-__device__ __forceinline__ void MulByBeta(u64* res, u64* x)
-{
-	u64 beta[4] = { ENDO_BETA_0, ENDO_BETA_1, ENDO_BETA_2, ENDO_BETA_3 };
-	MulModP(res, x, beta);
-}
-
-// GS_MODE: Multiply by beta^2
-__device__ __forceinline__ void MulByBeta2(u64* res, u64* x)
-{
-	u64 beta2[4] = { ENDO_BETA2_0, ENDO_BETA2_1, ENDO_BETA2_2, ENDO_BETA2_3 };
-	MulModP(res, x, beta2);
-}
-
-// Returns 1 if x < y, 0 otherwise
-__device__ __forceinline__ bool IsLessThan256(const u64* x, const u64* y)
-{
-	if (x[3] < y[3]) return true;
-	if (x[3] > y[3]) return false;
-	if (x[2] < y[2]) return true;
-	if (x[2] > y[2]) return false;
-	if (x[1] < y[1]) return true;
-	if (x[1] > y[1]) return false;
-	if (x[0] < y[0]) return true;
-	return false;
-}
-
-// Computes the canonical representation of X among {x, beta*x, beta^2*x}
-// Returns the class index: 0 for identity, 2 for beta, 4 for beta^2
-__device__ __forceinline__ u32 CanonicalX(u64* canon_x, u64* x)
-{
-	__align__(16) u64 bx[4], b2x[4];
-	MulByBeta(bx, x);
-	MulByBeta2(b2x, x);
-
-	u32 class_idx = 0; // GS_CLASS_IDENTITY
-	Copy_u64_x4(canon_x, x);
-
-	if (IsLessThan256(bx, canon_x))
-	{
-		Copy_u64_x4(canon_x, bx);
-		class_idx = 2; // GS_CLASS_BETA
-	}
-
-	if (IsLessThan256(b2x, canon_x))
-	{
-		Copy_u64_x4(canon_x, b2x);
-		class_idx = 4; // GS_CLASS_BETA2
-	}
-
-	return class_idx;
-}
-
-// Canonicalizes point considering Y sign
-__device__ __forceinline__ u32 Canonicalize(u64* canon_x, u64* x, u64* y)
-{
-	u32 class_idx = CanonicalX(canon_x, x);
-	if (y[0] & 1)
-		class_idx |= 1;
-	return class_idx;
-}

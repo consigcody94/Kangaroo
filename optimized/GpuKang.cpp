@@ -60,7 +60,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	u64 size;
 	if (!IsOldGpu)
 	{
-		//L2	
+		//L2
 		int L2size = Kparams.KangCnt * (3 * 32);
 		total_mem += L2size;
 		err = cudaMalloc((void**)&Kparams.L2, L2size);
@@ -74,12 +74,12 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 			size = persistingL2CacheMaxSize;
 		err = cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize, size); // set max allowed size for L2
 		//persisting for L2
-		cudaStreamAttrValue stream_attribute;                                                   
+		cudaStreamAttrValue stream_attribute;
 		stream_attribute.accessPolicyWindow.base_ptr = Kparams.L2;
-		stream_attribute.accessPolicyWindow.num_bytes = size;										
-		stream_attribute.accessPolicyWindow.hitRatio = 1.0;                                     
-		stream_attribute.accessPolicyWindow.hitProp = cudaAccessPropertyPersisting;             
-		stream_attribute.accessPolicyWindow.missProp = cudaAccessPropertyStreaming;  	
+		stream_attribute.accessPolicyWindow.num_bytes = size;
+		stream_attribute.accessPolicyWindow.hitRatio = 1.0;
+		stream_attribute.accessPolicyWindow.hitProp = cudaAccessPropertyPersisting;
+		stream_attribute.accessPolicyWindow.missProp = cudaAccessPropertyStreaming;
 		err = cudaStreamSetAttribute(NULL, cudaStreamAttributeAccessPolicyWindow, &stream_attribute);
 		if (err != cudaSuccess)
 		{
@@ -285,9 +285,13 @@ void RCGpuKang::GenerateRndDistances()
 	for (int i = 0; i < KangCnt; i++)
 	{
 		EcInt d;
-		// Single-herd GS mode: all kangaroos are wildly generated
-		d.RndBits(Range - 1);
-		d.data[0] &= 0xFFFFFFFFFFFFFFFE; //must be even
+		if (i < KangCnt / 3)
+			d.RndBits(Range - 4); //TAME kangs
+		else
+		{
+			d.RndBits(Range - 1);
+			d.data[0] &= 0xFFFFFFFFFFFFFFFE; //must be even
+		}
 		memcpy(RndPnts[i].priv, d.data, 24);
 	}
 }
@@ -321,7 +325,7 @@ bool RCGpuKang::Start()
 
 	RndPnts = (TPointPriv*)malloc(KangCnt * 96);
 	GenerateRndDistances();
-/* 
+/*
 	//we can calc start points on CPU
 	for (int i = 0; i < KangCnt; i++)
 	{
@@ -333,12 +337,18 @@ bool RCGpuKang::Start()
 		memcpy(RndPnts[i].x, p.x.data, 32);
 		memcpy(RndPnts[i].y, p.y.data, 32);
 	}
-	// GS mode: ALL kangaroos start from PntA
-	for (int i = 0; i < KangCnt; i++)
+	for (int i = KangCnt / 3; i < 2 * KangCnt / 3; i++)
 	{
 		EcPoint p;
 		p.LoadFromBuffer64((u8*)RndPnts[i].x);
 		p = ec.AddPoints(p, PntA);
+		p.SaveToBuffer64((u8*)RndPnts[i].x);
+	}
+	for (int i = 2 * KangCnt / 3; i < KangCnt; i++)
+	{
+		EcPoint p;
+		p.LoadFromBuffer64((u8*)RndPnts[i].x);
+		p = ec.AddPoints(p, PntB);
 		p.SaveToBuffer64((u8*)RndPnts[i].x);
 	}
 	//copy to gpu
@@ -350,15 +360,27 @@ bool RCGpuKang::Start()
 	}
 /**/
 	//but it's faster to calc them on GPU
-	u8 buf_PntA[64], buf_PntB[64], buf_PntC[64];
+	u8 buf_PntA[64], buf_PntB[64];
 	PntA.SaveToBuffer64(buf_PntA);
 	PntB.SaveToBuffer64(buf_PntB);
-	PntC.SaveToBuffer64(buf_PntC);
-	// GS mode: ALL kangaroos start from PntA
+#ifdef GS_MODE
+	// GS mode: ALL kangaroos start from PntA (target - halfrange)
+	// Each has a unique random distance offset — collisions between
+	// any two walks with different offsets solve the DLP
+	for (int i = 0; i < KangCnt; i++)
+		memcpy(RndPnts[i].x, buf_PntA, 64);
+#else
 	for (int i = 0; i < KangCnt; i++)
 	{
-		memcpy(RndPnts[i].x, buf_PntA, 64);
+		if (i < KangCnt / 3)
+			memset(RndPnts[i].x, 0, 64);
+		else
+			if (i < 2 * KangCnt / 3)
+				memcpy(RndPnts[i].x, buf_PntA, 64);
+			else
+				memcpy(RndPnts[i].x, buf_PntB, 64);
 	}
+#endif
 	//copy to gpu
 	err = cudaMemcpy(Kparams.Kangs, RndPnts, KangCnt * 96, cudaMemcpyHostToDevice);
 	if (err != cudaSuccess)
@@ -400,8 +422,13 @@ int RCGpuKang::Dbg_CheckKangs()
 		p = ec.MultiplyG_Fast(dist);
 		if (neg)
 			p.y.NegModP();
-		// GS mode: ALL kangaroos start from PntA
-		p = ec.AddPoints(PntA, p);
+		if (i < KangCnt / 3)
+			p = p;
+		else
+			if (i < 2 * KangCnt / 3)
+				p = ec.AddPoints(PntA, p);
+			else
+				p = ec.AddPoints(PntB, p);
 		if (!p.IsEqual(Pnt))
 			res++;
 	}
@@ -425,14 +452,27 @@ void RCGpuKang::Execute()
 #ifdef DEBUG_MODE
 	u64 iter = 1;
 #endif
-	cudaError_t err;	
+	cudaError_t err;
+	// Double-buffer: process previous batch's DPs while GPU computes next batch
+	int prev_cnt = 0;
+	cudaStream_t computeStream;
+	cudaStreamCreate(&computeStream);
 	while (!StopFlag)
 	{
 		u64 t1 = GetTickCount64();
-		cudaMemset(Kparams.DPs_out, 0, 4);
-		cudaMemset(Kparams.DPTable, 0, KangCnt * sizeof(u32));
-		cudaMemset(Kparams.LoopedKangs, 0, 8);
+		// Launch GPU work asynchronously
+		cudaMemsetAsync(Kparams.DPs_out, 0, 4, computeStream);
+		cudaMemsetAsync(Kparams.DPTable, 0, KangCnt * sizeof(u32), computeStream);
+		cudaMemsetAsync(Kparams.LoopedKangs, 0, 8, computeStream);
 		CallGpuKernelABC(Kparams);
+
+		// While GPU computes, process PREVIOUS batch's DPs on CPU
+		if (prev_cnt > 0)
+		{
+			AddPointsToList(DPs_out, prev_cnt, (u64)KangCnt * STEP_CNT);
+		}
+
+		// Now wait for GPU to finish current batch
 		int cnt;
 		err = cudaMemcpy(&cnt, Kparams.DPs_out, 4, cudaMemcpyDeviceToHost);
 		if (err != cudaSuccess)
@@ -441,7 +481,7 @@ void RCGpuKang::Execute()
 			gTotalErrors++;
 			break;
 		}
-		
+
 		if (cnt >= MAX_DP_CNT)
 		{
 			cnt = MAX_DP_CNT;
@@ -449,6 +489,7 @@ void RCGpuKang::Execute()
 		}
 		u64 pnt_cnt = (u64)KangCnt * STEP_CNT;
 
+		// Copy DPs to host buffer (will be processed NEXT iteration while GPU runs)
 		if (cnt)
 		{
 			err = cudaMemcpy(DPs_out, Kparams.DPs_out + 4, cnt * GPU_DP_SIZE, cudaMemcpyDeviceToHost);
@@ -457,8 +498,8 @@ void RCGpuKang::Execute()
 				gTotalErrors++;
 				break;
 			}
-			AddPointsToList(DPs_out, cnt, (u64)KangCnt * STEP_CNT);
 		}
+		prev_cnt = cnt;  // Save for next iteration's CPU processing
 
 		//dbg
 		cudaMemcpy(dbg, Kparams.dbg_buf, 1024, cudaMemcpyDeviceToHost);
