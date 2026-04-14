@@ -285,13 +285,9 @@ void RCGpuKang::GenerateRndDistances()
 	for (int i = 0; i < KangCnt; i++)
 	{
 		EcInt d;
-		if (i < KangCnt / 4)
-			d.RndBits(Range - 4); //TAME kangs
-		else
-		{
-			d.RndBits(Range - 1);
-			d.data[0] &= 0xFFFFFFFFFFFFFFFE; //must be even
-		}
+		// Single-herd GS mode: all kangaroos are wildly generated
+		d.RndBits(Range - 1);
+		d.data[0] &= 0xFFFFFFFFFFFFFFFE; //must be even
 		memcpy(RndPnts[i].priv, d.data, 24);
 	}
 }
@@ -337,25 +333,12 @@ bool RCGpuKang::Start()
 		memcpy(RndPnts[i].x, p.x.data, 32);
 		memcpy(RndPnts[i].y, p.y.data, 32);
 	}
-	for (int i = KangCnt / 4; i < 2 * KangCnt / 4; i++)
+	// GS mode: ALL kangaroos start from PntA
+	for (int i = 0; i < KangCnt; i++)
 	{
 		EcPoint p;
 		p.LoadFromBuffer64((u8*)RndPnts[i].x);
 		p = ec.AddPoints(p, PntA);
-		p.SaveToBuffer64((u8*)RndPnts[i].x);
-	}
-	for (int i = 2 * KangCnt / 4; i < 3 * KangCnt / 4; i++)
-	{
-		EcPoint p;
-		p.LoadFromBuffer64((u8*)RndPnts[i].x);
-		p = ec.AddPoints(p, PntB);
-		p.SaveToBuffer64((u8*)RndPnts[i].x);
-	}
-	for (int i = 3 * KangCnt / 4; i < KangCnt; i++)
-	{
-		EcPoint p;
-		p.LoadFromBuffer64((u8*)RndPnts[i].x);
-		p = ec.AddPoints(p, PntC);
 		p.SaveToBuffer64((u8*)RndPnts[i].x);
 	}
 	//copy to gpu
@@ -371,16 +354,10 @@ bool RCGpuKang::Start()
 	PntA.SaveToBuffer64(buf_PntA);
 	PntB.SaveToBuffer64(buf_PntB);
 	PntC.SaveToBuffer64(buf_PntC);
+	// GS mode: ALL kangaroos start from PntA
 	for (int i = 0; i < KangCnt; i++)
 	{
-		if (i < KangCnt / 4)
-			memset(RndPnts[i].x, 0, 64);
-		else if (i < 2 * KangCnt / 4)
-			memcpy(RndPnts[i].x, buf_PntA, 64);
-		else if (i < 3 * KangCnt / 4)
-			memcpy(RndPnts[i].x, buf_PntB, 64);
-		else
-			memcpy(RndPnts[i].x, buf_PntC, 64);
+		memcpy(RndPnts[i].x, buf_PntA, 64);
 	}
 	//copy to gpu
 	err = cudaMemcpy(Kparams.Kangs, RndPnts, KangCnt * 96, cudaMemcpyHostToDevice);
@@ -423,14 +400,8 @@ int RCGpuKang::Dbg_CheckKangs()
 		p = ec.MultiplyG_Fast(dist);
 		if (neg)
 			p.y.NegModP();
-		if (i < KangCnt / 4)
-			p = p;
-		else if (i < 2 * KangCnt / 4)
-			p = ec.AddPoints(PntA, p);
-		else if (i < 3 * KangCnt / 4)
-			p = ec.AddPoints(PntB, p);
-		else
-			p = ec.AddPoints(PntC, p);
+		// GS mode: ALL kangaroos start from PntA
+		p = ec.AddPoints(PntA, p);
 		if (!p.IsEqual(Pnt))
 			res++;
 	}

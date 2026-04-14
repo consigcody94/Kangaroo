@@ -6,6 +6,9 @@
 
 #include <iostream>
 #include <vector>
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
 
 #include "cuda_runtime.h"
 #include "defs.h"
@@ -157,9 +160,16 @@ void MulModN(EcInt& res, const EcInt& a, const EcInt& b)
 		u64 carry = 0;
 		for (int j = 0; j < 4; j++)
 		{
+#ifdef _MSC_VER
+			u64 hi, lo;
+			lo = _umul128(a.data[i], b.data[j], &hi);
+			u8 c = _addcarry_u64(0, p[i + j], lo, &p[i + j]);
+			c = _addcarry_u64(c, carry, hi, &carry); // carry now holds the upper 64 bits + any carry from the lower addition
+#else
 			unsigned __int128 prod = (unsigned __int128)a.data[i] * b.data[j] + p[i + j] + carry;
 			p[i + j] = (u64)prod;
 			carry = (u64)(prod >> 64);
+#endif
 		}
 		p[i + 4] = carry;
 	}
@@ -368,27 +378,11 @@ void CheckNewPoints()
 			}
 
 			EcInt w, t;
-			int TameType, WildType;
-			if (pref->type != TAME)
-			{
-				memcpy(w.data, pref->d, sizeof(pref->d));
-				if (pref->d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
-				memcpy(t.data, nrec.d, sizeof(nrec.d));
-				if (nrec.d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
-				TameType = nrec.type;
-				WildType = pref->type;
-			}
-			else
-			{
-				memcpy(w.data, nrec.d, sizeof(nrec.d));
-				if (nrec.d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
-				memcpy(t.data, pref->d, sizeof(pref->d));
-				if (pref->d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
-				TameType = TAME;
-				WildType = nrec.type;
-			}
-
-			bool res = Collision_SOTA(gPntToSolve, t, TameType, w, WildType, false) || Collision_SOTA(gPntToSolve, t, TameType, w, WildType, true);
+			memcpy(w.data, pref->d, sizeof(pref->d));
+			if (pref->d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
+			memcpy(t.data, nrec.d, sizeof(nrec.d));
+			if (nrec.d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
+			bool res = Collision_SOTA(gPntToSolve, t, 0, w, 0, false);
 			if (!res)
 			{
 				// 4-kangaroo: more wild type pairs can collide in mirror without yielding K

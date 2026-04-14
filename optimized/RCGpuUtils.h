@@ -636,3 +636,66 @@ __device__ __forceinline__ void InvModP(u32* res)
 		sub_288_P(res);
 }
 
+
+
+// GS_MODE: Multiply by secp256k1 endomorphism beta (cube root of unity)
+__device__ __forceinline__ void MulByBeta(u64* res, u64* x)
+{
+	u64 beta[4] = { ENDO_BETA_0, ENDO_BETA_1, ENDO_BETA_2, ENDO_BETA_3 };
+	MulModP(res, x, beta);
+}
+
+// GS_MODE: Multiply by beta^2
+__device__ __forceinline__ void MulByBeta2(u64* res, u64* x)
+{
+	u64 beta2[4] = { ENDO_BETA2_0, ENDO_BETA2_1, ENDO_BETA2_2, ENDO_BETA2_3 };
+	MulModP(res, x, beta2);
+}
+
+// Returns 1 if x < y, 0 otherwise
+__device__ __forceinline__ bool IsLessThan256(const u64* x, const u64* y)
+{
+	if (x[3] < y[3]) return true;
+	if (x[3] > y[3]) return false;
+	if (x[2] < y[2]) return true;
+	if (x[2] > y[2]) return false;
+	if (x[1] < y[1]) return true;
+	if (x[1] > y[1]) return false;
+	if (x[0] < y[0]) return true;
+	return false;
+}
+
+// Computes the canonical representation of X among {x, beta*x, beta^2*x}
+// Returns the class index: 0 for identity, 2 for beta, 4 for beta^2
+__device__ __forceinline__ u32 CanonicalX(u64* canon_x, u64* x)
+{
+	__align__(16) u64 bx[4], b2x[4];
+	MulByBeta(bx, x);
+	MulByBeta2(b2x, x);
+
+	u32 class_idx = 0; // GS_CLASS_IDENTITY
+	Copy_u64_x4(canon_x, x);
+
+	if (IsLessThan256(bx, canon_x))
+	{
+		Copy_u64_x4(canon_x, bx);
+		class_idx = 2; // GS_CLASS_BETA
+	}
+
+	if (IsLessThan256(b2x, canon_x))
+	{
+		Copy_u64_x4(canon_x, b2x);
+		class_idx = 4; // GS_CLASS_BETA2
+	}
+
+	return class_idx;
+}
+
+// Canonicalizes point considering Y sign
+__device__ __forceinline__ u32 Canonicalize(u64* canon_x, u64* x, u64* y)
+{
+	u32 class_idx = CanonicalX(canon_x, x);
+	if (y[0] & 1)
+		class_idx |= 1;
+	return class_idx;
+}

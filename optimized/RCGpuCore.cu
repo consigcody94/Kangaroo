@@ -124,7 +124,11 @@ __global__ void KernelA(const TKparams Kparams)
 
 			LOAD_VAL_256(x0, L2x, group);
             LOAD_VAL_256(y0, L2y, group);
-			jmp_ind = JumpHash(x0);
+			__align__(16) u64 cx_back[4];
+			{
+				CanonicalX(cx_back, x0);
+				jmp_ind = JumpHash(cx_back);
+			}
 			
 			jmp_table = ((L1S2 >> group) & 1) ? jmp2_table : jmp1_table;
 			Copy_int4_x2(jmp_x, jmp_table + 8 * jmp_ind);
@@ -540,7 +544,7 @@ __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u
 	*(int4*)&DPs[0] = rx;
 	*(int4*)&DPs[4] = ((int4*)d)[0];
 	*(u64*)&DPs[8] = d[2];
-	DPs[10] = 4 * kang_ind / Kparams.KangCnt; //kang type
+	DPs[10] = 0; // GS mode treats all as same type, equivalence resolving does the rest
 }
 
 __device__ __forceinline__ bool ProcessJumpDistance(u32 step_ind, u32 d_cur, u64* d, u32 kang_ind, u64* jmp1_d, u64* jmp2_d, const TKparams& Kparams, u64* table, u32* cur_ind, u8 iter)

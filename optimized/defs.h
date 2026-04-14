@@ -120,3 +120,14 @@ struct TKparams
 	u32 KernelC_LDS_Size;	
 };
 
+
+// secp256k1 endomorphism beta constants
+#define ENDO_BETA_0  0xc1396c28719501eeULL
+#define ENDO_BETA_1  0x9cf0497512f58995ULL
+#define ENDO_BETA_2  0x6e64479eac3434e9ULL
+#define ENDO_BETA_3  0x7ae96a2b657c0710ULL
+
+#define ENDO_BETA2_0  0x3ec693d68e6afa40ULL
+#define ENDO_BETA2_1  0x630fb68aed0a766aULL
+#define ENDO_BETA2_2  0x919bb86153cbcb16ULL
+#define ENDO_BETA2_3  0x851695d49a83f8efULL
