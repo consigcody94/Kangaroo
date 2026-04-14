@@ -11,7 +11,6 @@
 #include "defs.h"
 #include "utils.h"
 #include "GpuKang.h"
-#include "SECPK1/Int.h"
 
 
 EcJMP EcJumps1[JMP_CNT];
@@ -148,6 +147,67 @@ void AddPointsToList(u32* data, int pnt_cnt, u64 ops_cnt)
 	csAddPoints.Leave();
 }
 
+
+void MulModN(EcInt& res, const EcInt& a, const EcInt& b)
+{
+	// 512-bit product
+	u64 p[8] = { 0 };
+	for (int i = 0; i < 4; i++)
+	{
+		u64 carry = 0;
+		for (int j = 0; j < 4; j++)
+		{
+			unsigned __int128 prod = (unsigned __int128)a.data[i] * b.data[j] + p[i + j] + carry;
+			p[i + j] = (u64)prod;
+			carry = (u64)(prod >> 64);
+		}
+		p[i + 4] = carry;
+	}
+
+	// Reduce modulo n
+	// n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+	u64 n_mod[8] = { 0xBFD25E8CD0364141ULL, 0xBAAEDCE6AF48A03BULL, 0xFFFFFFFFFFFFFFFEULL, 0xFFFFFFFFFFFFFFFFULL, 0, 0, 0, 0 };
+
+	auto shift_left_512 = [](u64* num) {
+		u64 carry = 0;
+		for (int i = 0; i < 8; i++) {
+			u64 next_carry = num[i] >> 63;
+			num[i] = (num[i] << 1) | carry;
+			carry = next_carry;
+		}
+	};
+
+	auto cmp_512 = [](u64* x, u64* y) -> int {
+		for (int i = 7; i >= 0; i--) {
+			if (x[i] > y[i]) return 1;
+			if (x[i] < y[i]) return -1;
+		}
+		return 0;
+	};
+
+	auto sub_512 = [](u64* x, u64* y) {
+		u8 borrow = 0;
+		for (int i = 0; i < 8; i++) {
+			borrow = _subborrow_u64(borrow, x[i], y[i], &x[i]);
+		}
+	};
+
+	u64 rem[8] = { 0 };
+	// Process all 512 bits from most significant to least
+	for (int i = 511; i >= 0; i--)
+	{
+		shift_left_512(rem);
+		if ((p[i / 64] >> (i % 64)) & 1)
+			rem[0] |= 1;
+
+		if (cmp_512(rem, n_mod) >= 0)
+			sub_512(rem, n_mod);
+	}
+
+	memcpy(res.data, rem, 32);
+	res.data[4] = 0;
+}
+
 bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, bool IsNeg)
 {
 	if (IsNeg)
@@ -205,14 +265,7 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 				l2.data[2] = 0x5363ad4cc05c30e0ULL; l2.data[3] = 0xa5261c028812645aULL;
 				l2.data[4] = 0;
 
-				Int d_int, l2_int;
-				d_int.Set((uint64_t*)diff.data);
-				l2_int.Set((uint64_t*)l2.data);
-				d_int.ModMulK1order(&l2_int);
-
-				// Copy back
-				memcpy(gPrivKey.data, d_int.GetQWordArray(), 32);
-				gPrivKey.data[4] = 0;
+				MulModN(gPrivKey, diff, l2);
 
 				gPrivKey.Add(Int_HalfRange);
 				P = ec.MultiplyG(gPrivKey);
@@ -230,15 +283,15 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 				l2.data[2] = 0x5363ad4cc05c30e0ULL; l2.data[3] = 0xa5261c028812645aULL;
 				l2.data[4] = 0;
 
-				Int d_int, l2_int;
-				d_int.Set((uint64_t*)diff.data);
-				l2_int.Set((uint64_t*)l2.data);
-				d_int.ModNegK1order();
-				d_int.ModMulK1order(&l2_int);
+				EcInt neg_diff = diff;
+				u64 n_mod[4] = { 0xBFD25E8CD0364141ULL, 0xBAAEDCE6AF48A03BULL, 0xFFFFFFFFFFFFFFFEULL, 0xFFFFFFFFFFFFFFFFULL };
+				u8 borrow = 0;
+				for (int i = 0; i < 4; i++) {
+					borrow = _subborrow_u64(borrow, n_mod[i], neg_diff.data[i], &neg_diff.data[i]);
+				}
+				neg_diff.data[4] = 0;
 
-				// Copy back
-				memcpy(gPrivKey.data, d_int.GetQWordArray(), 32);
-				gPrivKey.data[4] = 0;
+				MulModN(gPrivKey, neg_diff, l2);
 
 				gPrivKey.Add(Int_HalfRange);
 				P = ec.MultiplyG(gPrivKey);
