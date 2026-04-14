@@ -1119,66 +1119,6 @@ void Int::Div(Int *a,Int *mod) {
 
 // ------------------------------------------------
 
-void Int::GCD(Int *a) {
-
-    uint32_t k;
-    uint32_t b;
-
-    Int U(this);
-    Int V(a);
-    Int T;
-
-    if(U.IsZero()) {
-      Set(&V);
-      return;
-    }
-
-    if(V.IsZero()) {
-      Set(&U);
-      return;
-    }
-
-    if(U.IsNegative()) U.Neg();
-    if(V.IsNegative()) V.Neg();
-
-    k = 0;
-    while (U.GetBit(k)==0 && V.GetBit(k)==0)
-      k++;
-    U.ShiftR(k);
-    V.ShiftR(k);
-    if (U.GetBit(0)==1) { 
-      T.Set(&V);
-      T.Neg();
-    } else {
-      T.Set(&U);
-    }
-
-    do {
-
-      if( T.IsNegative() ) {
-        T.Neg();
-        b=0;while(T.GetBit(b)==0) b++;
-        T.ShiftR(b);
-        V.Set(&T);
-        T.Set(&U);
-      } else {
-        b=0;while(T.GetBit(b)==0) b++;
-        T.ShiftR(b);
-        U.Set(&T);
-      }
-
-      T.Sub(&V);
-
-    } while (!T.IsZero());
-
-    // Store gcd
-    Set(&U);
-    ShiftL(k); 
-
-}
-
-// ------------------------------------------------
-
 void Int::SetBase10(char *value) {  
 
   CLEAR();

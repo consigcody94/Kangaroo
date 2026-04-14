@@ -109,7 +109,6 @@ public:
   static Int *GetR4();                           // Return R4
   static Int* GetFieldCharacteristic();          // Return field characteristic
 
-  void GCD(Int *a);                          // this <- GCD(this,a)
   void Mod(Int *n);                          // this <- this (mod n)
   void ModInv();                             // this <- this^-1 (mod n)
   void MontgomeryMult(Int *a,Int *b);        // this <- a*b*R^-1 (mod n)
