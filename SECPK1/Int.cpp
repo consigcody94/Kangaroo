@@ -1216,26 +1216,23 @@ std::string Int::GetBase16() {
 // ------------------------------------------------
 
 std::string Int::GetBlockStr() {
-	
-	char tmp[256];
-	char bStr[256];
-	tmp[0] = 0;
+
+	std::string res;
+	char bStr[64];
 	for (int i = NB32BLOCK-3; i>=0 ; i--) {
 	  sprintf(bStr, "%08X", bits[i]);
-	  strcat(tmp, bStr);
-	  if(i!=0) strcat(tmp, " ");
+	  res += bStr;
+	  if(i!=0) res += " ";
 	}
-	return std::string(tmp);
+	return res;
 }
 
 // ------------------------------------------------
 
 std::string Int::GetC64Str(int nbDigit) {
 
-  char tmp[256];
-  char bStr[256];
-  tmp[0] = '{';
-  tmp[1] = 0;
+  std::string res = "{";
+  char bStr[64];
   for (int i = 0; i< nbDigit; i++) {
     if (bits64[i] != 0) {
 #ifdef WIN64
@@ -1246,11 +1243,11 @@ std::string Int::GetC64Str(int nbDigit) {
     } else {
       sprintf(bStr, "0ULL");
     }
-    strcat(tmp, bStr);
-    if (i != nbDigit -1) strcat(tmp, ",");
+    res += bStr;
+    if (i != nbDigit -1) res += ",";
   }
-  strcat(tmp,"}");
-  return std::string(tmp);
+  res += "}";
+  return res;
 }
 
 // ------------------------------------------------
@@ -1338,21 +1335,19 @@ int Int::GetBit(uint32_t n) {
 
 std::string Int::GetBase2() {
 
-  char ret[1024];
-  int k=0;
+  std::string res;
+  res.reserve((NB32BLOCK - 1) * 32);
 
   for(int i=0;i<NB32BLOCK-1;i++) {
     unsigned int mask=0x80000000;
     for(int j=0;j<32;j++) {
-      if(bits[i]&mask) ret[k]='1';
-      else             ret[k]='0';
-      k++;
+      if(bits[i]&mask) res += '1';
+      else             res += '0';
       mask=mask>>1;
     }
   }
-  ret[k]=0;
 
-  return std::string(ret);
+  return res;
 
 }
 

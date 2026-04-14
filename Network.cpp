@@ -420,7 +420,6 @@ bool Kangaroo::HandleRequest(TH_PARAM *p) {
       Int K;
       uint64_t nbKangaroo;
       uint32_t fileNameSize;
-      char fileNameTmp[264];
       char fileName[256];
       int128_t *KBuff;
       uint32_t nbK;
@@ -437,18 +436,17 @@ bool Kangaroo::HandleRequest(TH_PARAM *p) {
       fileName[fileNameSize]=0;
       GET("nbKangaroo",p->clientSock,&nbKangaroo,sizeof(uint64_t),ntimeout);
 
-      strcpy(fileNameTmp,fileName);
-      strcat(fileNameTmp,".tmp");
+      std::string fileNameTmp = std::string(fileName) + ".tmp";
 
-      FILE* f = fopen(fileNameTmp,"wb");
+      FILE* f = fopen(fileNameTmp.c_str(),"wb");
       if(f == NULL) {
-        ::printf("\nCannot open %s for writing\n",fileNameTmp);
+        ::printf("\nCannot open %s for writing\n",fileNameTmp.c_str());
         ::printf("%s\n",::strerror(errno));
         CLIENT_ABORT();
       }
 
       if(::fwrite(&header,sizeof(uint32_t),1,f) != 1) {
-        ::printf("\nCannot write to %s\n",fileNameTmp);
+        ::printf("\nCannot write to %s\n",fileNameTmp.c_str());
         ::printf("%s\n",::strerror(errno));
         ::fclose(f);
         CLIENT_ABORT();
@@ -494,7 +492,7 @@ bool Kangaroo::HandleRequest(TH_PARAM *p) {
         ::printf("\nWarning, Kangaroo backup wrong checksum %s\n",fileName);
       } else {
         remove(fileName);
-        rename(fileNameTmp,fileName);
+        rename(fileNameTmp.c_str(),fileName);
       }
 
     } break;
