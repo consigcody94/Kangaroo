@@ -15,6 +15,15 @@ EcPoint g_G; //Generator point
 
 #define P_REV	0x00000001000003D1
 
+// Group order n and lambda-related precomputed scalars mod n (initialized in InitEc)
+EcInt g_N;                      // FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE BAAEDCE6 AF48A03B BFD25E8C D0364141
+EcInt g_LAMBDA_N;               // endomorphism eigenvalue mod n
+EcInt g_LAMBDA2_N;              // lambda^2 mod n = lambda^(-1) mod n (since lambda^3 = 1 mod n)
+EcInt g_INV_1_MINUS_LAMBDA;     // (1 - lambda)^(-1) mod n   — for +sign collision candidates
+EcInt g_INV_1_PLUS_LAMBDA;      // (1 + lambda)^(-1) mod n   — for -sign collision candidates
+EcInt g_INV_1_MINUS_LAMBDA2;    // (1 - lambda^2)^(-1) mod n
+EcInt g_INV_1_PLUS_LAMBDA2;     // (1 + lambda^2)^(-1) mod n
+
 #ifdef DEBUG_MODE
 u8* GTable = NULL; //16x16-bit table
 #endif
@@ -111,6 +120,97 @@ void InitEc()
 	g_P.SetHexStr("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F"); //Fp
 	g_G.x.SetHexStr("79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798"); //G.x
 	g_G.y.SetHexStr("483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8"); //G.y
+
+	// secp256k1 group order n (prime)
+	g_N.SetHexStr("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141");
+
+	// lambda: eigenvalue of the order-3 endomorphism phi on the group order
+	// phi(P) = (beta * P.x, P.y) corresponds to scalar multiplication by lambda
+	g_LAMBDA_N.SetHexStr("5363AD4CC05C30E0A5261C028812645A122E22EA20816678DF02967C1B23BD72");
+	// lambda^2 mod n, computed from lambda to avoid hex-typo risk.
+	// Identity: lambda^3 = 1 (mod n), so lambda^2 = lambda^(-1) (mod n).
+	g_LAMBDA2_N.Assign(g_LAMBDA_N);
+	g_LAMBDA2_N.MulModN(g_LAMBDA_N);
+
+	// Precompute inverses used in GS-collision key recovery.
+	// Each InvModN is a 256-iteration Fermat modpow (~65k MulModN calls, ~few ms at startup)
+	EcInt one;
+	one.Set(1);
+
+	// (1 - lambda)^(-1)
+	g_INV_1_MINUS_LAMBDA.Assign(one);
+	g_INV_1_MINUS_LAMBDA.SubModN(g_LAMBDA_N);
+	g_INV_1_MINUS_LAMBDA.InvModN();
+
+	// (1 + lambda)^(-1)
+	g_INV_1_PLUS_LAMBDA.Assign(one);
+	g_INV_1_PLUS_LAMBDA.AddModN(g_LAMBDA_N);
+	g_INV_1_PLUS_LAMBDA.InvModN();
+
+	// (1 - lambda^2)^(-1)
+	g_INV_1_MINUS_LAMBDA2.Assign(one);
+	g_INV_1_MINUS_LAMBDA2.SubModN(g_LAMBDA2_N);
+	g_INV_1_MINUS_LAMBDA2.InvModN();
+
+	// (1 + lambda^2)^(-1)
+	g_INV_1_PLUS_LAMBDA2.Assign(one);
+	g_INV_1_PLUS_LAMBDA2.AddModN(g_LAMBDA2_N);
+	g_INV_1_PLUS_LAMBDA2.InvModN();
+
+	// Sanity checks for mod-n arithmetic (reports only on failure, silent on pass).
+	{
+		EcInt test, tmp;
+
+		// 1. lambda * lambda^2 == 1 mod n (verifies MulModN + lambda constants)
+		test.Assign(g_LAMBDA_N);
+		test.MulModN(g_LAMBDA2_N);
+		if (!test.IsEqual(one))
+			printf("FATAL: lambda * lambda^2 != 1 mod n (MulModN bug)\n");
+
+		// 2. (1 - lambda) * g_INV_1_MINUS_LAMBDA == 1 mod n
+		tmp.Assign(one);
+		tmp.SubModN(g_LAMBDA_N);
+		tmp.MulModN(g_INV_1_MINUS_LAMBDA);
+		if (!tmp.IsEqual(one))
+		{
+			printf("FATAL: (1-lambda) * g_INV_1_MINUS_LAMBDA != 1 mod n (InvModN bug on (1-lambda))\n");
+			char buf[100]; tmp.GetHexStr(buf);
+			printf("  got: %s\n", buf);
+		}
+
+		// 3. (1 + lambda) * g_INV_1_PLUS_LAMBDA == 1 mod n
+		tmp.Assign(one);
+		tmp.AddModN(g_LAMBDA_N);
+		tmp.MulModN(g_INV_1_PLUS_LAMBDA);
+		if (!tmp.IsEqual(one))
+		{
+			printf("FATAL: (1+lambda) * g_INV_1_PLUS_LAMBDA != 1 mod n\n");
+			char buf[100]; tmp.GetHexStr(buf);
+			printf("  got: %s\n", buf);
+		}
+
+		// 4. (1 - lambda^2) * g_INV_1_MINUS_LAMBDA2 == 1 mod n
+		tmp.Assign(one);
+		tmp.SubModN(g_LAMBDA2_N);
+		tmp.MulModN(g_INV_1_MINUS_LAMBDA2);
+		if (!tmp.IsEqual(one))
+		{
+			printf("FATAL: (1-lambda^2) * g_INV_1_MINUS_LAMBDA2 != 1 mod n\n");
+			char buf[100]; tmp.GetHexStr(buf);
+			printf("  got: %s\n", buf);
+		}
+
+		// 5. (1 + lambda^2) * g_INV_1_PLUS_LAMBDA2 == 1 mod n
+		tmp.Assign(one);
+		tmp.AddModN(g_LAMBDA2_N);
+		tmp.MulModN(g_INV_1_PLUS_LAMBDA2);
+		if (!tmp.IsEqual(one))
+		{
+			printf("FATAL: (1+lambda^2) * g_INV_1_PLUS_LAMBDA2 != 1 mod n\n");
+			char buf[100]; tmp.GetHexStr(buf);
+			printf("  got: %s\n", buf);
+		}
+	}
 #ifdef DEBUG_MODE
 	GTable = (u8*)malloc(16 * 256 * 256 * 64);
 	EcPoint pnt = g_G;
@@ -969,6 +1069,96 @@ void EcInt::SqrModP()
 	data[4] = _addcarry_u64(c, buff[3], 0, data + 3);
 	while (data[4])
 		Sub(g_P);
+}
+
+// -----------------------------------------------------------------------------
+// Scalar-field (mod n) arithmetic — used for Gaudry-Schost collision recovery
+// when a DP collision involves secp256k1's order-3 endomorphism lambda.
+// These are NOT hot-loop functions (called only on DP matches), so we favor
+// clarity over micro-optimization.
+// -----------------------------------------------------------------------------
+
+void EcInt::AddModN(EcInt& val)
+{
+	Add(val);
+	if (data[4] || !IsLessThanU(g_N))
+		Sub(g_N);
+}
+
+void EcInt::SubModN(EcInt& val)
+{
+	if (Sub(val))
+		Add(g_N);
+}
+
+void EcInt::NegModN()
+{
+	Neg();
+	Add(g_N);
+	// If we started with 0, Neg gives 0, Add(g_N) gives g_N; reduce:
+	if (!IsLessThanU(g_N))
+		Sub(g_N);
+}
+
+// this = this * val mod n
+// Implementation: double-and-add bitwise (256 iterations). Not fast, but clearly
+// correct. Called only at collision-recovery time, so perf is irrelevant.
+void EcInt::MulModN(EcInt& val)
+{
+	EcInt original;
+	original.Assign(*this);
+
+	SetZero();
+
+	for (int i = 255; i >= 0; i--)
+	{
+		// result = 2 * result mod n
+		ShiftLeft(1);
+		if (data[4] || !IsLessThanU(g_N))
+			Sub(g_N);
+
+		// if bit i of val is set: result = (result + original) mod n
+		if ((val.data[i >> 6] >> (i & 63)) & 1)
+		{
+			Add(original);
+			if (data[4] || !IsLessThanU(g_N))
+				Sub(g_N);
+		}
+	}
+}
+
+// this = this^(-1) mod n via Fermat's little theorem: x^(n-2) mod n.
+// n is prime for secp256k1. Only called at init time for a small number of
+// constants; use binary modpow.
+void EcInt::InvModN()
+{
+	// compute n - 2
+	EcInt n_minus_2;
+	n_minus_2.Assign(g_N);
+	EcInt two;
+	two.Set(2);
+	n_minus_2.Sub(two);
+
+	EcInt result;
+	result.Set(1);
+
+	EcInt base;
+	base.Assign(*this);
+
+	// walk bits of (n-2) from bit 0 upward, squaring base each step
+	for (int i = 0; i < 256; i++)
+	{
+		if ((n_minus_2.data[i >> 6] >> (i & 63)) & 1)
+		{
+			result.MulModN(base);
+		}
+		// base = base^2 mod n
+		EcInt base_copy;
+		base_copy.Assign(base);
+		base.MulModN(base_copy);
+	}
+
+	Assign(result);
 }
 
 void EcInt::Mul_u64(EcInt& val, u64 multiplier)

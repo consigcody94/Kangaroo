@@ -1,0 +1,676 @@
+                                       Minors solve the elliptic curve discrete logarithm problem
+
+                                                       Ansari Abdullaha                                  Ayan Mahalanobisb
+
+arXiv:2310.04132v1 [cs.CR] 6 Oct 2023                                                                Abstract
+
+                                           The elliptic curve discrete logarithm problem is of fundamental importance in public-key cryptography.
+                                       It is in use for a long time. Moreover, it is an interesting challenge in computational mathematics. Its
+                                       solution is supposed to provide interesting research directions.
+
+                                           In this paper, we explore ways to solve the elliptic curve discrete logarithm problem. Our results are
+                                       mostly computational. However, it seems, the methods that we develop and directions that we pursue
+                                       can provide a potent attack on this problem. This work follows our earlier work, where we tried to solve
+                                       this problem by finding a zero minor in a matrix over the same finite field on which the elliptic curve is
+                                       defined. This paper is self-contained.
+
+                                       1 Introduction
+
+                                       Let F be a finite field of arbitrary characteristic. Let
+
+                                                       a11 a12 a13 . . . a1d
+
+                                                       a21 a22 a23 . . . a2d                                                                       (1)
+                                                       A=
+                                                               ...       ...                        ...  ...  ...  
+                                                                                                                   
+                                                                                                                   
+
+                                                               al1 al2 al3 . . . ald
+
+                                       be a l ×d matrix over F. Let ,  be two ordered subsets of {1, 2, . . . , l} and {1, 2, . . . , d} respectively and are
+                                       of the same size k. Then we define the sub-matrix A[|] of A to be the square matrix of size k consisting of
+                                       elements that are in the intersection of the rows in  and columns in  in A. The ordering in the sub-matrix
+                                       is the same as the ordering in the matrix A. The determinant of A[|] is a minor of A.
+
+                                           A non-singular elliptic curve over F will be denoted by E. We will consider it as a plane projective curve
+                                       in the projective plane P2. It is well known that there is an abelian group operation on E with the point
+                                       at infinity O as the zero element. We will use that fact and denote the abelian group by E as well. We
+                                       will often assume that E is of prime order and the order is p, a prime. The reader is reminded, if E is not
+                                       of prime order but p is any prime divisor of the order of E, a subgroup of E exist which is of order p. We
+                                       will take that subgroup to be the E in this paper. Once we assume that the group of rational points of an
+                                       elliptic curve is of order p, the next thing to assume is that it has a generator P, i.e., E = P.
+
+                                       Definition 1 (The elliptic curve discrete logarithm problem). Let E and P be as above. Then the elliptic
+                                       curve discrete logarithm problem is: given P and Q = mP in E, where 1 < m < p, compute m.
+
+                                           In this paper, we will deal with the elliptic curve discrete logarithm problem exclusively. Since there is
+                                       no scope of confusion, we will call it the discrete logarithm problem.
+
+                                           We write this paper to share a few things:
+
+                                       a) Finding a zero minor in an appropriate matrix, just like A, solves the discrete logarithm problem.
+
+                                       b) We share some success in finding a zero minor with experiments involving almost principal minor (see
+                                              Table 6). We believe the reason behind this success is the existence of a set of initial minors. This
+                                              solidifies our conjecture of initial minors.
+
+                                       c) We solve the discrete logarithm problem for many different large cases. Moreover, we claim that there
+                                              is a successful attack in the making, using methods in this paper.
+
+                                           aSPPU, Pune, India
+                                           bIISER Pune, Pune, India
+
+                                                                                                 1
+2 Generate A
+
+The central idea behind constructing A is to look at a matrix M and construct its left-kernel K. Recall
+that the left-kernel is the kernel of the transpose of a matrix. Then A is just a sub-matrix of K. The idea
+behind constructing M is a well known theorem. Before we go to the theorem, we need to be familiar with
+the concept of a divisor on E.
+
+Definition 2 (Divisor). Let E be the elliptic curve defined over F. The divisor D is defined as the formal
+sum D = i ni[Pi], where ni are integers and Pi are rational points on E. Since the field F is finite, the
+formal sum is always finite.
+
+    We present bare minimum details on divisor in this paper, enough to make it self contained. For more
+on divisors the reader can consult any text book in algebraic geometry. Fulton [2], Hartshorne [3], Milne [5]
+and Silverman [6] all contain such details.
+
+    If ni  0 the divisor is called effective. The group of all divisors D is a free abelian group and is called
+the divisor class group. When the divisors belong to the elliptic curve E it is denoted by Div(E). The degree
+of the divisor D is i ni. The set of all degree zero divisors form a subgroup of the group of divisors and is
+denoted by Div0(E).
+
+    Let f be a homogeneous rational function in P2. Then f = g/h where g and h are homogeneous
+polynomials in three variables of the same degree and furthermore E does not divide h. Then f defines a
+rational function on E. The points of intersection of g are zeros of f (counting multiplicity) and the points of
+intersection of h and E are poles of f (counting multiplicity). Over a algebraically closed field, the number of
+zeros and poles of f are finite and are the same. Then one can define the divisor corresponding to f as Df =
+
+   ni[Pi] where g intersects E at Pi with intersection multiplicity ni or h intersects E at Pi with multiplicity
+ni. Note, the multiplicity of a zero is considered positive and that of a pole negative. These divisors are
+called principal divisors and denoted by Prin(E). We define the Picard group Pic0(E) = Div0(E)/Prin(E).
+One can now define a map from the group of rational points of an elliptic curve E to the group Pic0(E).
+This map is know as the Abel-Jacobi map.
+
+                  P  [P] - [O]                                                                                        (2)
+
+For a non-singular elliptic curve over an algebraically closed field this map is an isomorphism.
+    Let C be a projective plane curve of degree n not containing E. Then according to Bezout's theorem
+
+the curve C can intersect E in at most 3n points (counting multiplicity). We use d = 3n for the rest of the
+paper.
+
+    We now state and sketch a proof of a theorem that was proved in Mahalanobis et al. [4] (see also [1]).
+We include a short proof for the convenience of the reader.
+
+Theorem 2.1. Let E be as defined above. Then there is a plane projective curve C passing through d points,
+
+P1, P2, . . . , Pd of E and not containing E if and only if  d    Pi  =  O.  Where  O  is  the  neutral  element  of  the
+                                                             i=1
+
+abelian group E.
+
+Proof. The proof over algebraically closed field is straightforward consequence of the fact that the Abel-
+
+Jacobi map is an isomorphism. We pay special attention to the part where there is a plane projective curve
+C of degree n that intersects the elliptic curve E at d points. We construct the rational function C/zn.
+
+Now this rational function has a pole of order d at O. Thus the Abel-Jacobi map says that i Pi = O. The
+reverse direction is straightforward.
+
+    Extending the proof to finite fields uses a well known trick using the Frobenius automorphism of a finite
+
+field.
+
+    Coming back to the discrete logarithm problem, we need to compute m from P and Q. We intend to
+
+compute unique points of the form niP = Pi and -njQ = Qj where ni and nj are integers in the range 1 to
+p, such that, i Pi + j Qj = O. This gives us i ni - m j nj = 0 mod p. We know ni and nj and then
+we have a linear equation in one unknown m. Thus we can solve for m and the discrete logarithm problem
+
+is solved.
+    Now let us construct the matrix M. For this we take all possible monomials in x, y, z of degree n ordered
+
+in a particular way. The order once chosen remain fixed throughout the paper. It is known that the number
+
+                  2
+of such monomials is  n+2  .  We  construct  M  one  row  at  a  time.  For  each  Pi  we  evaluate  each  monomial
+                        2
+at Pi in the above order. The vector thus formed is the ith row of M. We do this for all Pi and Qj and M
+
+is created. Recall that all Pi and Qj are distinct. Thus rows of M are indexed by Pi and Qj. This is the
+
+same as ni and nj indexing rows in M. This is because ni and -nj creates Pi and Qj. The left-kernel of
+
+M is denoted by K. By points in M we mean those points Pi and Qj that creates M. Recall that M has
+
+d rows. Thus K has d columns indexed by Pi and Qj.
+
+The next lemma starts the process of an actual algorithm. To prove this lemma we use the fundamental
+
+theorem on four subspaces of a matrix A. This states that the nullspace of A is an orthogonal complement
+
+of the column space of AT and the nullspace of AT is an orthogonal complement of the column space of A.
+
+Lemma 2.1. The left-kernel K is zero if and only if there is no homogeneous plane curve C of degree n
+that passes through the points in M and does not contain the elliptic curve E.
+
+Proof. The proof uses an easy and elementary counting argument. First assume that K = 0. Then the
+                                                                                           n+2               n-1
+dimension of the column space of MT is 3n. Then the dimension of the kernel of M is          2       - 3n =    2  .
+
+This proves that the right-kernel of M contains all monomials of degree n-3. This is the set of all monomials
+
+of degree n that contains the elliptic curve.
+
+Conversely assume that that the right-kernel of M contain curves C that contain the elliptic curve. Then
+                                  n-1                     n+2           n-1
+the dimension of the subspace is    2  .  Furthermore,      2    -        2  = 3n. Thus the dimension of the
+
+kernel of MT = 0.
+
+    The above lemma is interesting in its own right. But, from the perspective of solving the discrete
+logarithm problem it is rather useless. This is because, to use the above theorem in solving the discrete
+logarithm problem we have to find points Pi and Qj that adds up to O. There is no way to predict which
+points might do that. So in practice the complexity is worse than solving the discrete logarithm problem
+by exhaustive search.
+
+    The next theorem is of vital interest for the algorithm that we develop in this paper. In this case we
+take l extra points. In other words, the matrix M created above now has d + l rows constructed out of
+d + l points Pi and Qj. From this matrix, the left-kernel K can be computed easily. The columns of this
+left-kernel K corresponds to the points Pi and Qj on E from which M was created. For the experiments we
+take n = log2 p. In practice one can take n to be some constant multiple of log2 p where the constant is a
+small integer. When this is the case, computing K from M is polynomial in both space and time complexity.
+
+Theorem 2.2. (Extra points theorem) Let M has d + l rows coming from d + l points Pi and Qj for some
+integer l  1. Then the left-kernel K of M has dimension l. Furthermore, if there is a vector v in K with l
+zeros, there is a curve C that passes through d points Pi and Qj which corresponds to non-zero points of the
+vector v.
+
+Proof. First note that the new M has d + l rows and       n+2    columns. It follows from Bezout's theorem,
+                                                            2
+if there is a curve C that passes through more than 3n points of the elliptic curve E, it must contain the
+                                                                                           n-1
+elliptic curve as a component. This says that the dimension of the right-kernel of M is      2       .     Since the
+
+right-kernel is the orthogonal complement of the column space of MT . This says that the dimension of the
+                       n+2        n-1
+column space of MT is    2    -     2  = 3n. Since the row-rank equals the column-rank, the dimension of
+
+the column space of M is 3n. Then the orthogonal complement of the column space is the dimension of K
+
+the kernel of MT which is l.
+
+Now if there is a vector v with l zeros, then take the nonzero components of v and the corresponding rows
+
+of M. Then using the earlier theorem we have a curve passing through those points where v is non-zero.
+
+Remark 1. In the above theorem we are talking about l zeros. Why the number of zeros can not be different
+than l?
+
+    In our experience with computing the discrete logarithm problem, we have never seen this happen except
+
+in one case. This is when a chosen point ni is the secret m. This is tantamount to solving the discrete
+logarithm problem by guessing and never happens for large enough prime p. The other reason is theoretical.
+If there is a vector v with more than l zeros then that vector is non-zero in less than 3n places. We create
+a sub-matrix M of M corresponding to the non-zero position in v. The number of these positions is less
+
+                                                     3
+than 3n and thus the number of rows in M is less than 3n. We extend this matrix M to 3n rows by
+putting in arbitrary rows corresponding to arbitrary points from E. Then the non-zero components of v
+along with few zeros at appropriate places will be in the left-kernel of this extended matrix. Then the sum
+of the points that make the rows of this extended matrix will be O. This is absurd as the rows that extend
+M was arbitrarily chosen. Thus the number of zeros never exceed l. However, if there are fewer than l
+zeros then the curve C so obtained contain the elliptic curve E and is thus useless for our purpose. From the
+matrix K, the matrix A is extracted.
+
+Remark 2. How do we ensure that there is atleast one Pi and one Qj in the non-zero entries of v created
+above?
+
+The above is an important point because unless both Pi and Qj are present in the non-zero entries of
+
+the v produced above, the discrete logarithm problem is not solved. However, there are many ways to solve
+
+this problem. First, in our experiments we optimize d and l. It is well known that  d+l  is the biggest when
+                                                                                      l
+
+d = l. Thus we choose d = l for all our experiments and for the rest of the paper. Thus our matrix K is of
+
+size l × 2l and A is of size l × l.
+
+So now we have 2l points Pi and Qj. We have to ensure that every choice of l points from 2l points must
+
+have at least one Pi and Qj. We took l - 1 points Pi and l + 1 points Qj. There is a small chance that all
+
+the l points that we get from non-zero components of v are all Qj. In which case we have not solved the
+
+discrete logarithm problem. While doing these experiments, in many cases we went all the way and solved
+
+for m. And we were successful all the time. This is because   l+1  is very small compared to  2l  .
+                                                                l                             l
+
+3 A zero-minor solves the discrete logarithm problem
+
+In this section, we show that finding a zero-minor in A solves the discrete logarithm problem by showing
+that there is one-one correspondence between zero-minors in A and maximal zero-minors in K. Note that
+K is a l × 2l matrix and A is a l × l matrix. Recall that for the purpose of experiments we are assuming
+that d = l.
+
+    The size of K and A follows from the fact that the left-kernel K is a l dimensional vector space. The basis
+matrix of the subspace K is denoted by K as well; where rows and columns of K are indexed by {1, 2, . . . , l}
+and {1, 2, . . . , 2l} respectively.
+
+    Each row of the matrix K is a basis vector of the subspace K. Then one can do row operations to reduce
+K into the following form:
+
+                                     a11 a12 a13 . . . a1l 0 . . . 0 1
+
+                                     a21 a22 a23 . . . a2l 0 . . . 1 0                               (3)
+K=
+                                     ...  ...  ...  ...  ...  0    ...  ...  ...  
+                                                                                  
+                                                                                  
+
+                                     al1 al2 al3 . . . all 1 . . . 0 0
+
+where the right hand side is in the reverse identity form, which we will refer to as the sparse part. The
+left hand side is the dense part which is A. If any one of aij = 0 where i, j = 1, 2, . . . , l then the discrete
+logarithm problem is solved. So we can safely assume that aij = 0 for all i, j.
+
+    By a maximal minor in K we mean a minor of size l, in which case all the rows are chosen and l columns
+from 2l columns are chosen. Let {a1, a2, . . . , ak} be the rows and {b1, b2, . . . , bk} be the columns of a zero-
+minor in A. Let {a1 , a2, . . . , al-k} be the ordered complement of the set {a1, a2, . . . , ak} in {1, 2, . . . , l}.
+Then the maximal minor in K consist of the columns {b1, b2, . . . , bk, l + a1 , l + a2, . . . , l + al-k}. To see why
+this is true, notice that if there is a zero-minor in A, then there are row operations in A that gives a zero
+row in the sub-matrix of the minor. Use the same row operations on K. Now note in the sparse part of K
+the position of the one is (i, l + i) for each i  {1, 2, . . . , l}. The row operation changes the structure of the
+sparse part of K. The zero-row in the sub-matrix gives rise to a non-zero part of size k in the sparse part.
+So the maximal minor is the columns in A and then the part in the sparse part of K that does not contain
+the non-zero part we just talked about, ordered accordingly. An observant reader might argue that what
+happens if all the rows of the sub-matrix of the minor were not used to get the zero-row. In that case we
+will have more than l zeros in a row and then a look at Remark 1 says that it can not be the case. So all
+rows must be involved. Thus we have proved the following theorem.
+
+                                                    4
+Theorem 3.1. For every zero-minor arising from a proper sub-matrix of A there is a maximal zero-minor
+in K. Furthermore, if there is a maximal zero-minor in K then that solves the discrete logarithm problem.
+
+Proof. The first part is already proved. To prove the last part of the theorem, first note that the maximal
+minor of K is of size l. Then the maximal zero-minor of K gives rise to a vector in the left-kernel with
+exactly l zeros; Theorem 2.2 takes care of the rest.
+
+4 Finding a zero-minor in A
+
+In this section, we talk about methods and algorithms to find a zero minor in the l × l matrix A which is
+non-singular. It is easy to see that if A is singular the discrete logarithm problem is solved. The number
+of minors in A is exponential in the size of the matrix. For a square matrix of size l, just the number of
+principal minors is 2l - 1. The number of total minors far exceed that. Thus, it is not possible to test all
+minors.
+
+    The purpose of our experiments in this paper is to solve this obvious conundrum ­ how to talk about all
+minors without involving all of them? The modus operandi for our experiments is the following:
+
+ Fix a set of minors. Then look for a zero minor in this set.
+
+ Fix an elliptic curve over a finite field of characteristic 2 and two points P and Q.
+
+ Create a left-kernel K. This part is randomized. Then create the submatrix A from K.
+
+ Check for zero minor in the fixed set of minors in A. If one found, the program stops.
+
+ Repeat with a new kernel K until a zero minor is found in the fixed set of minors and count the number
+       of kernels needed.
+
+We used three fixed sets. One, the set of all 2-minors. Two, the set that comes out of Gaussian elimination
+and Schur complement and the third is the set of almost principal minors. The size of all these sets are
+polynomial in the size of the matrix A. We report our results and subsequent improvements.
+
+    We started by testing all 2×2 minors of A for small enough fields. We call this experiment the all 2 minor
+experiment and was reported in our earlier work [1]. We provide the result for this experiment in Table 1.
+
+Table 1: all 2 minor : Average number of kernels to solve ECDLP
+
+Fq Average kernel count log2(p) No. of rows in A
+
+240  113.4       39  360
+
+243  716.3       42  387
+
+246  4406.26     45  414
+
+    In this experiment we counted the number of kernels required before a zero minor was detected by
+checking all 2 minors. For each input the experiment was repeated forty times and the average kernel count
+was reported in Table 1. Here the average kernel count increases exponentially. The next obvious step was
+to test all 3 × 3 minors. But there are too many of them and it was computationally very expensive to test
+all 3 minors. We can not keep the dimensions of the sub matrix increasing. That will defeat the purpose of
+the experiment.
+
+4.1 Initial Minors
+
+The purpose of this paper, is to show experimentally that probably there is a small set of minors and it is
+enough to check that set for a zero minor. We call this the initial minor conjecture and is from our earlier
+work [1]. This is the reason that we are experimenting with a fixed set of minors. The idea is to somehow
+approximate this set. Gain some understanding about it before we can formally prove its existence.
+
+    Conjecture (Initial Minors). For a matrix A, there exists a set of minors, whose cardinality is
+bounded by a polynomial or a sub-exponential function in the size of the matrix. If all the minors in this set
+is non-zero then all minors of the matrix is non-zero as well. This set is called a set of initial minors.
+
+              5
+    We report some success with our experiments. We attribute this success to the existence of a set of
+initial minors. Our first experiment was reported [1] and was the Gaussian elimination Schur complement
+experiment. We present that result in Table 2. The discrete logarithm problem for a 50-bit binary field was
+
+Table 2: Gaussian elimination Schur complement: Average kernels
+
+Fq Average kernel count log2(p) No. of rows in A
+
+240      2.8                        39   360
+
+241      3.1                        40   369
+
+242      6.6                        41   378
+
+243      11.3                       42   387
+
+244      17.1                       42   396
+
+245      53.8                       44   405
+
+246      40.2                       45   414
+
+247      126                        46   423
+
+248      186.6                      47   432
+
+249      367.8                      48   441
+
+250      887.5                      49   450
+
+solved using this algorithm. This algorithm works by reducing the input matrix A to A using row reduction.
+
+The input matrix A is partitioned into blocks E, F, G, H. If det(E) = 0 then the problem is solved. So we
+assume that E is non-singular. The block matrix E is produced by doing a Gaussian elimination to reduce
+
+it to a upper triangular matrix. All the column entries below that upper triangular matrix is made zero
+using row-operations. Thus the new matrix formed is A is of the form:
+
+     A=  E     F  -                 A =  E F                           (4)
+         G     H                         0 H
+
+In this experiment we changed the block size of E. The matrix H is called the Schur complement. The
+algorithm then searches for a 2 × 2 zero minor in H. The procedure is repeated with a new kernel until a
+zero-minor is found. If a 2 × 2 zero minor is found then the discrete logarithm problem is solved.
+
+    When a zero minor is found in the Schur complement, that results in a zero minor in the original matrix
+A by adjoining the indices of the zero minor in H with the indices of E. Note that E is a principal
+minor with contiguous rows starting with the first index of A. More about this algorithm is in our earlier
+work [1, Section 4].
+
+    If we compare Table 1 and Table 2, it is clear that Gaussian elimination Schur complement made
+significant improvements over the the all 2 minor experiment. Though we are still dealing with exponential
+growth with the number of kernels used to get the first zero minor, this method was able to solve the discrete
+logarithm problem for a 50-bit binary input and it checks a very small subset of all minors.
+
+    This success indicates that probably Gaussian elimination Schur complement was able to find a subset
+of a initial minor set. However the growth in the number of kernel used shows that the subset was probably
+not a significant subset. Motivated by the Gaussian elimination Schur complement algorithm, in the next
+section we did the almost principal minor experiment.
+
+5 Almost principal minor algorithm
+
+In the Gaussian elimination Schur complement experiment, a 2 × 2 zero minor from H was augmented with
+the principal block matrix E. This augmented minor was then used to solve the discrete logarithm problem.
+If the augmented zero minor had k rows and columns, the block matrix E has dimensions (k - 2) × (k - 2).
+The block matrix E has contiguous row and column indices. Moreover these row and column indices are
+
+identical. Such a minor is referred to as a principal minor.
+
+    Thus a k × k minor of A tested in Gaussian elimination Schur complement has row indices  and column
+
+indices  which are as follows:
+
+ = {1, 2, 3, ..., (k - 2), a1, a2}  = {1, 2, 3, ..., (k - 2), b1, b2}  (5)
+
+                  6
+where, a1, a2 and b1, b2 are row and column indices respectively of a 2 × 2 zero minor from H. We say
+that this k × k zero minor has almost contiguous row and column indices. The row and column indices 
+and  respectively are from the 2 × 2 zero minor of H are called the deviations to the principal minor
+
+{1, 2, . . . , (k - 2)}. We refer to this k × k minor with contiguous indices followed by deviations as an almost
+
+principal minor.
+
+Note that these deviations can occur either before or after the contiguous part. Some examples of almost
+
+principal minors are:
+
+                                        = {1, 2, 3, 4, 5, 13, 32}                                        (6)
+
+                                        = {1, 2, 7, 8, 9, 10, 11}                                        (7)
+
+Also the deviations can be both before or after the contiguous part as the following example shows:
+
+                                        = {1, 7, 8, 9, 10, 11, 13}                                       (8)
+
+These deviations can not occur within the contiguous part.
+    In the Gaussian elimination Schur complement experiment, the principal minor at the top left of the
+
+matrix A was used. There were row operations involved in the process of converting A to A. However,
+for an almost principal minor algorithm there are no row-operations involved. We test all almost principal
+minors with two and three deviation. An almost principal minor has two parameters, the principal minor
+and the deviation. Experimentally we observed that increasing the dimension of the principal minor and
+keeping deviation to two was not helpful. But, fixing the principal minor dimension to two and using two
+deviations followed by three deviations was helpful.
+
+5.1 Experiments with almost principal minor
+
+This experiment used the fixed set of almost principal minor to search for a zero minor. The input to
+this algorithm consists of a matrix A as described earlier. These matrices are over binary fields of sizes
+from 25 to 47 bits. For each input we count the number of kernels required before the first zero minor is
+found. Then the experiment is repeated ten times. The size of E is a prime p and about the same size of
+the field. The average number of kernels required to solve the discrete logarithm problem is then recorded
+for each binary field. Averaging over ten attempts is used to minimize the effect of randomization, as a
+randomized algorithm can sometimes solve the problem quickly or take a longer time for the same input.
+If the number of kernels grows gradually as inputs size increase, then ten attempts should be sufficient to
+minimize randomization effects. This was the case in our experiments, thus averaging over ten attempts is
+effective.
+
+    Table 3 gives the average kernel count for this experiment over ten tries. For inputs between 28 and 44
+bits, the problem was solved using one kernel on average. For the 45-bit input, the average iteration count
+was 1.2, where one instance required three kernels. The probabilistic nature of the Las Vegas algorithm
+means that an occasional instance may require more kernels than the average. However we did not observe
+any sudden or abrupt spike. This says that the computation is stable.
+
+                                   Table 3: APM : average kernel count
+
+Attempts  28      29   30  31  32  33  34  35    Field size in bits  40  41  42  43  44  45  46      47
+                                               36 37 38 39
+
+1         11111111111111111 1 1 1
+
+2         11111111111111111 1 1 1
+
+3         11111111111111111 1 3 3
+
+4         11111111111111111 1 2 1
+
+5         11111111111111111 1 1 1
+
+6         11111111111111111 1 1 6
+
+7         11111111111111111 1 2 1
+
+8         11111111111111111 3 1 1
+
+9         11111111111111111 1 1 1
+
+10        11111111111111111 1 3 2
+
+AVG 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1.2 1.6 1.8
+
+                                               7
+    Table 4 shows the deviations when the discrete logarithm was solved. It was observed that as the field
+size increases, there are no zero minors with two deviations, and the problem is almost always solved with
+three deviations.
+
+                          Table 4: APM : deviation when ECDLP solved
+
+Attempts      28  29  30  31  32  33  34  35   Field size in bits   40  41  42  43  44  45  46  47
+                                              36 37 38 39
+
+    1         22232333332333333333
+
+    2         22222333333333333333
+
+    3         22222233233333333333
+
+    4         22233333333333333333
+
+    5         22232332333333333333
+
+    6         22232333333333333333
+
+    7         22323333333333333333
+
+    8         22233233333333333333
+
+    9         22232322333333333333
+
+    10        22223332333333333333
+
+Table 5 gives the position of the principal minor when a zero minor was found, and it can be seen that
+for field sizes 36, 37 and 38, the principal minor is towards the left side of the matrix A. As the field size
+increases, the position of the principal minor moves towards the end of the matrix. For a given deviation
+when the position of the principal minor is towards the right side of A then we increase the deviation count.
+If the deviation count is not increased then the algorithm will take more than one kernel to solve the discrete
+logarithm. In the case of two deviations the complexity of the algorithm is O(l5). For three deviations the
+complexity is O(l7). In the general case of n deviations the complexity is O(l2n+1).
+
+                              Table 5: APM : principal minor position
+
+Attempts  27  28  29  30  31  32  33  34    Field size in bits  39  40  41  42  43  44      45 46 47
+                                          35 36 37 38
+
+1         13 5 10 10 1 23 1 1 1 1 4 39 13 10 34 13 46 63 5 12 73
+
+2         6 7 21 22 90 74 1 1 1 3 1 1 8 9 38 31 23 82 1 8 85
+
+3         4 49 1 9 20 66 60 1 1 32 1 2 3 13 4 25 20 33 109 74 46
+
+4         2 6 12 55 1 1 1 1 1 1 2 1 4 5 19 33 20 21 43 50 36
+
+5         11 1 13 1 1 47 1 1 20 2 2 3 2 5 19 26 17 87 88 14 76
+
+6         3 4 2 2 1 27 1 1 2 1 2 2 1 13 7 47 21 56 26 26 16
+
+7         2 4 7 1 66 1 1 1 1 1 6 1 1 9 1 56 63 44 40 71 61
+
+8         21 14 35 26 1 1 47 1 1 2 2 3 1 31 1 22 19 10 36 27 9
+
+9         1 10 6 9 1 76 1 25 95 1 2 2 1 17 7 41 4 26 63 17 9
+
+10        3 15 4 11 24 1 1 1 90 3 1 3 2 8 4 6 84 121 58 63 29
+
+5.2 Comaparing APM and GESC
+
+Table 6 gives a comparison between the average kernel count for the almost principal minor algorithms,
+and Gaussian elimination Schur complement algorithm. Figure 1 gives a logarithmic scaled graph for data
+given in Table 6. For the Gaussian elimination Schur complement experiment, the kernel size was amplified
+three times, while for the almost principal minor algorithm, the kernel size was not amplified. When the
+kernel size is not amplified the number of kernel required increases. So the graph in Figure 1 is not apples
+to apples. It will only get worse if we do an apple to apple comparison.
+
+    When we compare these two experiments, one can argue that the almost principal minor algorithm is
+testing more minors than the Gaussian elimination Schur complement algorithm. That is the reason for the
+speed-up. However, one must keep this in mind that to to be able to find minors means that there exist
+zero minors in A. Thus testing more minors is producing better results.
+
+    This suggests that the almost principal minor algorithm uses a more comprehensive set of initial minors
+than Gaussian elimination Schur complement. The data suggests that the growth of number of kernels
+in Gaussian elimination Schur complement is much slower than Gaussian elimination Schur complement
+
+                                                                      8
+                                   Figure 1: GESC Vs APM
+
+algorithm. Though from these experiments it is not possible to say for sure if what the future growth will
+be, we think that this can be a viable line of investigation in solving the discrete logarithm problem.
+
+    From the data available one can probably postulate that the almost principal minor algorithm has a
+polynomial time complexity in size of the matrix A. This can yield to a polynomial time algorithm to solve
+the discrete logarithm problem in the future.
+
+Table 6: APM Vs Gaussian elimination Schur complement : Average kernel count
+
+Algorithm  30  31  32  33  34  35        Field size in bits  41  42  43  44  45  46  47
+                                   36 37 38 39 40
+
+APM 1 1 1 1 1 1 1 1 1 1 1 1 1 1                                          1 1.2 1.6 1.8
+
+GESC 1 1 1 1 1 1 1 1 1 1.2 2.8 3.1 6.6 11.3 17.1 53.8 40.2 126
+
+6 Conclusions
+
+In this paper, we continued developing a novel method to solve the elliptic curve discrete logarithm prob-
+lem [1, 4]. Our method is unique as it uses minors to solve the discrete logarithm problem. Furthermore, we
+tried to establish the initial minor conjecture on a firm footing. We find this conjecture interesting.
+
+    At the heart of our method is partition of m modulo p into d parts. The process is simply to find integers
+ni for i = 1, 2, . . . , d where each 0 < ni < p such that i ni = 0 mod p. However, not any partition will
+do. Since we want to solve the discrete logarithm problem, both P and Q should be involved. Which means
+that m should divide some of these ni, but not all. Since, we do not know m, this is a hard problem. The
+way we handled this problem is by going to curves C intersecting the elliptic curves E at d points. The extra
+points theorem gave us the leverage to move into zero minors.
+
+    Now once we see this process as a whole, then one partition of m will give rise to several partitions of m.
+One such possibility is that for a non-zero c, such that, 0 < c < p. Now consider ni = ni - c and nj = nj + c
+for two different i and j, which are not divisible by m. This will give rise to a different set of points on E
+and subsequently another partition of m. Of course, there will be other partitions related to the original
+partition that have no explicit and easy description like the one above.
+
+    But, our algorithm is probabilistic in nature. We have no control on the points ni that we choose. They
+are chosen at random. On the other hand, there are simply so many related partitions that some of them
+are bound to occur. In other words, once we see one zero minor, there will be many zero minors related to
+the original zero minor. This was also observed experimentally.
+
+    In the following experiment we took the finite field of size 225. We computed a left-kernel K and then A
+for an appropriate choice of elliptic curve and points Pi and Qj as described earlier. The goal was to find
+all zero minors in A. It turned out to be impossible. So we used a short cut. We took contiguous principal
+
+                                                                      9
+minors one after the other of size 2. For each one of those principal minors we took all possible 2, 3 and 4
+deviations. We checked for zero minor in those almost principal minors. The result was somewhat stunning
+and is presented in this table
+
+                        2 deviation 3 deviation 4 deviation total
+
+average no. zero minor  1      230  70498 70729
+
+standard deviation             15   349  351
+
+where the average is over 66 principal minors of size 2.
+    One would expect that there would be a pattern in these zero minors. Though we have not found any
+
+pattern. But, a pattern would be interesting and that will shed light to the initial minor conjecture.
+
+References
+
+[1] A. Abdullah, A. Mahalanobis, and V. M. Mallick. A new method for solving the elliptic curve discrete
+    logarithm problem. journal of Groups, complexity, cryptology, Volume 12, Issue 2, 2021.
+
+[2] W. Fulton. Algebraic Curves. online, 2008.
+
+[3] R. Hartshorne. Algebraic Geometry. Springer, 1977.
+
+[4] A. Mahalanobis, V. M. Mallick, and A. Abdullah. A Las Vegas algorithm to solve the elliptic curve
+    discrete logarithm problem. In D. Chakraborty and T. Iwata, editors, Progress in Cryptology ­ IN-
+    DOCRYPT 2018, pages 215­227. Springer International Publishing, 2018.
+
+[5] J. S. Milne. Elliptic curves. Kea Books, 2006.
+
+[6] J. H. Silverman. The arithmetic of elliptic curves. Springer, 1985.
+
+                           10
+

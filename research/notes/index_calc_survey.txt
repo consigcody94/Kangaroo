@@ -1,0 +1,349 @@
+                                       Simple Multigraph Convolution Networks
+
+                                       Danyang Wu                Xinjie Shen                                                                   Jitao Lu
+
+                                       College of Information Engineering, South China University of Technology                       Northwestern Polytechnical
+                                                                                                                                                University
+                                       Northwest A&F University
+
+                                                      Jin Xu                                                                                 Feiping Nie
+
+                                       South China University of Technology                                                           Northwestern Polytechnical
+                                                      Pazhou Lab                                                                                University
+
+arXiv:2403.05014v1 [cs.LG] 8 Mar 2024  ABSTRACT                                                                                                 Figure 1: Overview of the proposed SMGCN.
+
+                                       Existing multigraph convolution methods either ignore the cross-                               user, and different views can be different social relations between
+                                       view interaction among multiple graphs, or induce extremely high                               users, such as friendship, following, and co-occurrence.
+                                       computational cost due to standard cross-view polynomial opera-
+                                       tors. To alleviate this problem, this paper proposes a Simple Multi-                              In recent years, several multigraph convolution methods have
+                                       Graph Convolution Networks (SMGCN) which first extracts con-                                   been proposed, including building robust node features to help to
+                                       sistent cross-view topology from multigraphs including edge-level                              regularize and aggregate embeddings learned from each view [9],
+                                       and subgraph-level topology, then performs polynomial expansion                                parallel learning embeddings of each view and concatenate their
+                                       based on raw multigraphs and consistent topologies. In theory,                                 min, max and mean as final embedding [11], summing embed-
+                                       SMGCN utilizes the consistent topologies in polynomial expansion                               dings learned from different orders of each view's graphs [2] and
+                                       rather than standard cross-view polynomial expansion, which per-                               Multi-Input Multi-Output GCN (MIMO-GCN) [2] that computes
+                                       forms credible cross-view spatial message-passing, follows the spec-                           embeddings learned from all combination of different views' graphs.
+                                       tral convolution paradigm, and effectively reduces the complexity
+                                       of standard polynomial expansion. In the simulations, experimental                                However, existing multigraph convolution methods still have
+                                       results demonstrate that SMGCN achieves state-of-the-art perfor-                               difficult in effectively solving the conflict between effectiveness
+                                       mance on ACM and DBLP multigraph benchmark datasets. Our                                       and efficiency. As Figure 1 shows, on the one hand, a part of meth-
+                                       codes are available at here.                                                                   ods consider integrate the multigraphs directly such as selection or
+                                                                                                                                      weighted sum operator, which is efficient but ignores the cross-view
+                                       KEYWORDS                                                                                       interaction among multiple graphs. On the other hands, several
+                                                                                                                                      methods such as MIMO [2], performs standard cross-view polyno-
+                                       Multigraph convolution networks, Multiview graph learning.                                     mial expansions on multigraphs, which integrates the high-order
+                                                                                                                                      structure with a global perspective, but the computational cost
+                                       ACM Reference Format:                                                                          can rapidly increase based on the number of polynomial orders
+                                       Danyang Wu, Xinjie Shen, Jitao Lu, Jin Xu, and Feiping Nie. 2024. Sim-                         and views. To alleviate this conflict, this paper proposes a Sim-
+                                       ple Multigraph Convolution Networks. In Companion Proceedings of the                           ple MultiGraph Convolution Networks (SMGCN) method which
+                                       ACM Web Conference 2024 (WWW '24 Companion), May 13­17, 2024, Singa-                           contains consistent topology extraction module and simple poly-
+                                       pore, Singapore. ACM, New York, NY, USA, 4 pages. https://doi.org/10.1145/                     nomial expansion module. To be specific, SMGCN first considers
+                                       3589335.3651560                                                                                extracting the consistent cross-view topology in edge-level and
+                                                                                                                                      subgraph-level, then performs polynomial expansion between raw
+                                       1 INTRODUCTION                                                                                 multigraphs edge-level, subgraph-level to induce the filtered graph
+                                                                                                                                      signal. More importantly, SMGCN is a simple and efficient method,
+                                       Multigraph convolution is an important tool in graph machine                                   which also performs credible cross-view spatial message-passing
+                                       learning and signal processing field, which aims to filter the graph                           and follows the spectral convolution paradigm. In experiments, we
+                                       signal in the spatial or (and) spectral domain of multiple graphs.
+
+                                          In recent years, multigraph convolution methods have been
+                                       widely used in many fields, such as social network analysis [3, 10],
+                                       recommendation system [7, 13], and bioinformatics [1, 12], for their
+                                       data is usually represented as a multigraph, which contains multiple
+                                       different views' graphs representing different relation about the
+                                       same object. For example, in social network analysis, node can be
+
+                                       Permission to make digital or hard copies of all or part of this work for personal or
+                                       classroom use is granted without fee provided that copies are not made or distributed
+                                       for profit or commercial advantage and that copies bear this notice and the full citation
+                                       on the first page. Copyrights for components of this work owned by others than the
+                                       author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or
+                                       republish, to post on servers or to redistribute to lists, requires prior specific permission
+                                       and/or a fee. Request permissions from permissions@acm.org.
+                                       WWW '24 Companion, May 13­17, 2024, Singapore, Singapore
+                                       © 2024 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+                                       ACM ISBN 979-8-4007-0172-6/24/05. . . $15.00
+                                       https://doi.org/10.1145/3589335.3651560
+WWW '24 Companion, May 13­17, 2024, Singapore, Singapore                                                                                                         Wu, et al.
+
+evaluate SMGCN on two famous multigraph benchmark datasets,                                     The concrete formulation can be written as follows:
+including ACM and DBLP. The experiment results demonstrate the
+superiorities of SMGCN with the perspective of effectiveness and                                                                 
+efficiency.
+                                                                                                           Z = IXWI +  (A( ) ) XW(A() ) ,                                (2)
+   The main contributions of this paper are summarized into the
+following two folds:                                                                                                            =1 =1
+
+· In theory, SMGCN performs cross-view interaction via a                                        where WI is the projection matrix for identity matrix, W(A() ) is
+  simple and efficient spectral convolution focusing on ex-                                     the projection matrix for -th order of A() .
+  tracting edge-level and subgraph-level consistent topology.
+  It effectively alleviates the conflict between effectiveness and                                 3) MIMO-GCN is the state-of-the-art method to perform multi-
+  efficiency in previous works.                                                                 graph convolution calculation, which aims to among high-order
+                                                                                                interaction of multiple graphs, considers any arrangement of the
+· In the simulations, experiment results demonstrate that SMGCN                                 views' graphs with given order . Then embeddings learned from
+  can achieve state-of-the-art performance with lower compu-                                    all combination of different views' graphs are summed as final em-
+  tational cost.                                                                                bedding. This method focus on interaction among different views'
+                                                                                                graph of different orders. The concrete formulation can be written
+                                                                                                as follows:
+
+Notations. In this paper, a  views multigraph is denoted as G =                                            Z = IXWI + Poly({A(1), . . . , A() }, ),                      (3)
+
+(V, {E (1) . . . E () })1. V is the set of nodes, E () is the set of edges                      where Poly({A(1), . . . , A() }, ) is the polynomial expansion of
+                                                                                                {A(1), . . . , A() } with order . It can be written as follows:
+in view . For easily understanding, we use {A(1), . . . , A() } to
+
+represent the adjacency matrix of each view's graph, where A() 
+
+R× is the adjacency matrix of view  and  is the number of nodes.                                                                             
+
+D() is the degree matrix of view , where D() =                                      A (   )  .         Poly({A(1), . . . , A() }, ) =    XW ,                            (4)
+                                                                             =1
+                                                                         ,            ,                                                      =1  
+
+X  R× is the node feature matrix, where  is the dimension of
+
+node feature. I is the identity matrix. W is the learnable projection                           where  is the set of all possible arrangements of length  of
+                                                                                                {A(1), . . . , A() }, W is the projection matrix for  .
+matrix.  is the order of polynomial expansion.
+
+2 RELATED WORKS                                                                                 3 SIMPLE MULTIGRAPH CONVOLUTION
+                                                                                                    NETWORKS (SMGCN)
+In this section, we introduce some representative works about multi-
+grpah convolution methods, including Parallel GCN (P-GCN) [11],                                 In this section, we first propose the edge-level and subgraph-level
+Merged GCN (M-GCN) [2] and Multi-Input Multi-Output GCN                                         consistent topology extraction modules, then introduce the pro-
+(MIMO-GCN) [2].                                                                                 posed SMGCN model.
+
+   1) P-GCN is the fundamental method to perform multigraph                                     3.1 Credible Edge-level Topology Extraction
+convolution calculation, which aims to learn node embedding based
+on each view's graph, then concatenate the min, max and mean                                    Given multigraph {A(1), . . . A() }, we first calculate the sum of all
+of these embeddings as final embedding. This method only focus
+on the first-order information of each view's graph separately. The                             views      A (  )  ,  then  we  filter  the  raw  edge  via  cross-view  voting
+concrete formulation can be written as follows:                                                        =1
+
+                                                                                                scheme, .., if an edge exists in two views, we set it as a credible
+
+                                                                                                raw edge. The concrete formulation can be written as follows:
+
+Z (  )  =  D  (    )  -  1  A  (    )  D  (    )  -  1  XW  (  )    {1, . . . , },                                  1,          if      I    ( ()      0)    2,
+                         2                           2                                                     , =                      =1
+                                                                                                                                                ,   >      
+
+Z = Concat(min({Z(1), . . . , Z() }),                                               (1)                                     0, Otherwise,                                (5)
+
+        max({Z(1), . . . , Z() }), mean({Z(1), . . . , Z() }),                                  where E  R× is the similarity matrix represented the edge-level
+                                                                                                credible topology. Obviously that since E can hold part of edges
+where W() is the projection matrix for graph in view  and Z()                                   based on cross-view topology, it can be seen as a summarization
+is the node embedding matrix for graph in view . Z  R× is the                                   of raw multigraph {A(1), . . . A() }, thus it can be used as a rep-
+final node embedding matrix, where  is the dimension of node                                    resentative structure to perform high-order interaction with raw
+embedding. min(·), max(·) and mean(·) are set operators, which                                  multigraph.
+compute minimum, maximum and mean values across all elements
+in all inputs, respectively.                                                                    3.2 Credible Subgraph-level Topology
+                                                                                                      Extraction
+   2) M-GCN is the fundamental method to perform multigraph
+convolution calculation, which considers the high-order informa-                                The exacted edge-level topology aforementioned above summarizes
+tion of each view's graph, then summing the embeddings learned                                  the credible topology structures of the raw multigraphs, which fo-
+from different orders of each view's graphs as final embedding. This                            cuses on the global structure of the graph of each view. In this sub-
+method focus on different orders of each view's graph separately.                               section, we focus on extracting credible subgraph-level topology,
+                                                                                                .., latent subgraph structure. Formally, 2suppose {A(1), . . . A() }
+1We treat  default bigger than 2 for standard cross-view polynomial expansion can
+be used directly when  = 2.                                                                     2If {A(1) , . . . A() } are weighted graph, this step can be skipped.
+Simple Multigraph Convolution Networks                                                               WWW '24 Companion, May 13­17, 2024, Singapore, Singapore
+
+           1                                         3                                       Target   Node    Node
+                                                                                              Node   Number  Feature
+                                                  1                                 Dataset   Type                       Views  View Names and Edge Number
+                                                             3                       ACM               3025   1902          4
+                                                                                     DBLP    Paper                          3           Co-author(30752),
+1          1   1                           3                    2                                      4057    334                    Co-subject(2214064),
+                                                                                             Author
+                                                     1                                                                                    Co-cite(5343),
+                                                                                                                                          Co-refer(5343).
+               3                                                                                                                         Co-paper(6572),
+                                                                                                                                    Co-conference(3225446),
+                                                                                                                                       Co-term(7611879).
+
+           3   3       2                                                                     Table 1: Statistics of benchmark datasets.
+
+                                                                                    Model                ACM(4 views)                DBLP(3 views)
+
+                                                                                                     ACC F1 NMI ACC F1 NMI
+
+                                                                                    P-GCN 93.77 93.82 76.89 91.43 90.68 73.31
+
+Figure 2: Triangle-based weighted similarity matrix genera-                         M-GCN 94.10 94.15 77.94 93.12 92.47 77.48
+tion. Self-loop is omitted in this figure.
+                                                                                    MIMO-GCN 94.33 94.40 79.04 92.57 91.86 76.04
+
+                                                                                    SMGCN 95.04 95.11 80.80 93.40 92.78 78.15
+
+are unweighted graph, we first calculate the triangle-based weighted                Table 2: Metrics of different methods on ACM and DBLP
+similarity matrix for each view as follows:
+                                                                                    dataset.
+        A() =  A (  )  +I               2  A() + I       .              (6)         cross-view topology {T(1), T(2) }, which significantly reduces the
+
+                                                                                    computational cost. More importantly, SMGCN can be seen as a
+
+In Figure 2, we illustrate the triangle-based weighted similarity                   pruning form of the standard cross-view high-order polynomial
+                                                                                    interaction among {A(1), . . . , A(), T(1), T(2) }, thus it also satisfies
+matrix generation procedure. Then we extract the first nearest
+neighbor matrix A() for each view as follows:                                       the spectral properties of standard polynomial expansion, such as
+
+  (  )  =  1,  if   N1() ( ) or   N1() (),                              (7)         Theorem 1 and Lemma 2 in [2].
+                                                                                       Computational Cost Comparison. We can evaluate the com-
+
+
+, 0, Otherwise,                                                                     putational cost of SMGCN based on the number of parameters. For
+
+where N1() () is set of the nearest neighbor of sample  in -th view.                instance, suppose the size of all projection matrices (including WI
+                                                                                    and W,, ) is 0 × 1 and the order is . In SMGCN, the number of
+Afterwards, according to the same principle of credible edge-level                  parameters is  (01), which is linear  . . the polynomial or-
+                                                                                    der. However, due to the standard cross-view polynomial expansion,
+topology extraction, we calculate the sum of all views                  A (   )  ,
+                                                                    =1
+
+then we filter the edge via cross-view voting scheme as follows:                    the number of parameters of MIMO (without the post-processing
+
+         1,    if                       I  ( ()   >  0)         2,                  pruning  operation)  is  +-1 -1   =  + -1!    .  According  to  Lemma    1
+, =                    =1                                                                                                   - 1!
+                                              ,                         (8)
+
+               0, Otherwise,                                                        in [2], the post-processing pruning operation can reduce a part of
+
+where S  R× is the similarity matrix represented the edge-                          terms when  > 3, but the concrete computational cost is hard to
+level credible topology. Naturally, S can be seen as a summariza-
+tion of generated subgraph-level multigraph similarity matrices                     evaluate since it is determined by threshold.
+{A~ (1), . . . A~ () }. More importantly, S may generate the new edges
+from raw multigraph due to the sub-graph generation procedure,                      4 EXPERIMENTS
+which provides new perspective in the cross-view interactions of
+multigraph.                                                                         4.1 Benchmark Datasets
+
+3.3 Simple High-order Interaction Formulation                                       In this section, we introduce the benchmark datasets used in our
+                                                                                    experiments, including ACM [8], DBLP [6]. To perform task on
+According to the credible edge-level topology E and subgraph-level                  multi-view graph, we follow the usage in [4], which turns graph
+                                                                                    with multi relational edges and multi types nodes into multi-view
+topology S, we design the following simple high-order interaction                   graphs with only one type nodes. The statistics of these datasets
+formulation (For better illustration, we denote T(1) = E and T(2) =                 are summarized in Table 1.
+S) to obtain the hidden layer multigraph representation3:
+                                                                                       For ACM dataset, we consider four views, including co-author,
+              2                                                                     co-subject, co-cite and co-refer relation between papers. For DBLP
+Z = IXWI +   (A() ) (T( ) ) - XW,,,                                                 dataset, we consider three views, including co-paper, co-conference
+                                                                        (9)         and co-term relation between authors. All the datasets are available
+                                                                                    at Pytorch Geometric [5].
+            =1 =1 =1
+
+where WI is the projection matrix for node feature IX and W,, is                    4.2 Experimental Settings and Evaluation
+the projection matrix for each polynomial combination for {A(1), . . . ,                   Metrics
+A() } and {T(1), T(2) },  is the order of polynomial expansion.
+                                                                                    We perform node classification tasks on both datasets, with given
+Compared with previous works such as the standard cross-view                        train/test split in corresponding dataset. 10% of nodes in original
+                                                                                    training set are used as validation set. We grid search the learning
+polynomial expansion of MIMO, SMGCN cleverly performs the                           rate and weight decay in {0.1,0.01,0.001} and {0,1e-5.1e-4,1e-3,1e-
+                                                                                    2}. All the optimizer are Adam. All the hidden dimension are set to
+cross-view interaction of multigraph via extracting two credible
+
+3 (A() ) (T( ) ) - can be symmetrized in practice (optional).
+WWW '24 Companion, May 13­17, 2024, Singapore, Singapore                                                                                                                                                   Wu, et al.
+
+                     &URVV9LHZX                                         &URVV9LHZ  0                     T1 of ACM(22340 edges)                      0                     T2 of ACM(6091 edges)
+
+3DUDPHWHUVPLOOLRQ  
+
+                                                                                   500                                                               500
+
+                    
+
+                                                                                   1000                                                              1000
+
+                                                                                              Part of largest connected component                               Part of largest connected component
+
+                      3*&1 0*&1 0*&1 0*&1 0,02*&1 0,02*&1 60*&1 60*&1              1500 0                                                            1500 0
+                                                                                          50                                                                50
+                                  .  .   .  .                .  N       N                100                                                               100
+
+                                         0RGHOVRQ$&0GDWDVHW                        2000 150                                                          2000 150
+                          (a) Parameters of models on ACM dataset                        200                                                               200
+                                                                                         250                                                               250
+                      &URVV9LHZX                                        &URVV9LHZ
+                                                                                   2500 300                                                          2500 300
+                                                                                         350                                                               350
+
+3DUDPHWHUVPLOOLRQ                                                                 3000       500  1000  1500                      2000  2500  3000  3000  0    500  1000  1500                      2000  2500  3000
+                                                                                        0
+
+                                                                                                   (a) T(1)                                                          (b) T(2)
+
+                                                                                   Figure 5: Visualization of T(1) and T(2) learned by our method
+
+                                                                                   on ACM dataset. Yellow boxes represent nodes in the same
+
+                      3*&1 0*&1 0*&1 0*&1 0,02*&1 0,02*&1 60*&1 60*&1              connecting component.
+
+                                  .  .   .  .                .  N       N          SMGCN efficiently performs spatial cross-view message-passing
+                                                                                   via extracting credible cross-view topology, including edge-level
+                                                   0RGHOVRQ'%/3GDWDVHW             and subgraph-level. It is worth noting that the proposed extraction
+                                                                                   methods for credible cross-view topology are just simple and effec-
+                          (b) Parameters of models on BDLP dataset                 tive instance. The idea, .., extracting edge-level and subgraph-level
+                                                                                   to perform cross-view message-passing, has enlightening implica-
+Figure 3: Parameters of models on ACM and DBLP dataset.                            tions for the field of multigraph convolution fields. We really hope
+                                                                                   to see more effective extraction methods emerge in the future.
+                                         0                              0
+                                         1                              1
+                                         2                              2
+
+                      (a) Node features     (b) Node embeddings                    REFERENCES
+
+Figure 4: Visualization of node embedding learned by our                            [1] Tapas Bhadra, Saurav Mallik, and Sanghamitra Bandyopadhyay. 2019. Identifica-
+method on ACM dataset.                                                                   tion of Multiview Gene Modules Using Mutual Information-Based Hypograph
+                                                                                         Mining. IEEE Transactions on Systems, Man, and Cybernetics: Systems 49, 6 (June
+128. All the activation function are ReLu. One linear layer is used                      2019), 1119­1130.
+to project the node embedding to the classification space. Due to
+memory limitation, we set the maximum order of polynomial ex-                       [2] Landon Butler, Alejandro Parada-Mayorga, and Alejandro Ribeiro. 2023. Con-
+pansion  to 3. Accuracy, F1 macro and NMI are used as evaluation                         volutional Learning on Multigraphs. IEEE Transactions on Signal Processing 71
+metrics.                                                                                 (2023), 933­946.
+
+4.3 Results and Analysis                                                            [3] Wanqiu Cui, Junping Du, Dawei Wang, Feifei Kou, and Zhe Xue. 2021. MV-
+                                                                                         GAN: Multi-View Graph Attention Network for Social Event Detection. ACM
+Results are shown in Table 2. We can see that our method outper-                         Transactions on Intelligent Systems and Technology 12, 3 (June 2021), 1­24.
+forms all the baseline methods on both datasets, achieving state-of-
+the-art performance.                                                                [4] Shaohua Fan, Xiao Wang, Chuan Shi, Emiao Lu, Ken Lin, and Bai Wang. 2020.
+                                                                                         One2Multi Graph Autoencoder for Multi-view Graph Clustering. In Proceedings
+   As Figure 3 shows, our method has the same cross-view function                        of The Web Conference 2020. ACM.
+as MIMO-GCN, but has much fewer parameters and much lower
+parameters' growth with the increase of K than MIMO-GCN. Our                        [5] Matthias Fey and Jan E. Lenssen. 2019. Fast Graph Representation Learning with
+method also has comparable parameters amount with other sim-                             PyTorch Geometric. In ICLR Workshop on Representation Learning on Graphs and
+ple methods such as P-GCN and M-GCN that have no cross-view                              Manifolds.
+function. Visualization of the learned node embedding is shown
+in Figure 4, which shown effective node embedding reflecting the                    [6] Xinyu Fu, Jiani Zhang, Ziqiao Meng, and Irwin King. 2020. MAGNN: Metapath
+node label information is learned by our method. Visualization of                        Aggregated Graph Neural Network for Heterogeneous Graph Embedding. In
+T(1) and T(2) learned by our method is shown in Figure 5, which                          Proceedings of The Web Conference 2020. ACM.
+shown that T(1) focus more on the global structures, while T(2)
+focus more on the local structures.                                                 [7] Qi Li, Wenping Chen, Zhaoxi Fang, Changtian Ying, and Chen Wang. 2023. A
+                                                                                         multi-view contrastive learning for heterogeneous network embedding. Scientific
+5 CONCLUSION                                                                             Reports 13, 1 (April 2023).
+
+In this paper, we propose a simple and efficient multigraph convo-                  [8] Qingsong Lv, Ming Ding, Qiang Liu, Yuxiang Chen, Wenzheng Feng, Siming
+lution method named as SMGCN. Different with previous works,                             He, Chang Zhou, Jianguo Jiang, Yuxiao Dong, and Jie Tang. 2021. Are we really
+                                                                                         making much progress?. In Proceedings of the 27th ACM SIGKDD Conference on
+                                                                                         Knowledge Discovery Data Mining. ACM.
+
+                                                                                    [9] Meng Qu, Jian Tang, Jingbo Shang, Xiang Ren, Ming Zhang, and Jiawei Han. 2017.
+                                                                                         An Attention-based Collaboration Framework for Multi-View Network Repre-
+                                                                                         sentation Learning. In Proceedings of the 2017 ACM on Conference on Information
+                                                                                         and Knowledge Management. ACM.
+
+                                                                                   [10] Liat Sless, Noam Hazon, Sarit Kraus, and Michael Wooldridge. 2018. Forming k
+                                                                                         coalitions and facilitating relationships in social networks. Artificial Intelligence
+                                                                                         259 (June 2018), 217­245.
+
+                                                                                   [11] Duo Wang, Mateja Jamnik, and Pietro Lio. 2020. Abstract Diagrammatic Reason-
+                                                                                         ing with Multiplex Graph Networks.
+
+                                                                                   [12] Ke Yan, Xiaozhao Fang, Yong Xu, and Bin Liu. 2019. Protein fold recognition
+                                                                                         based on multi-view modeling. Bioinformatics 35, 17 (Jan. 2019), 2982­2990.
+
+                                                                                   [13] Ding Zou, Wei Wei, Xian-Ling Mao, Ziyang Wang, Minghui Qiu, Feida Zhu, and
+                                                                                         Xin Cao. 2022. Multi-level Cross-view Contrastive Learning for Knowledge-
+                                                                                         aware Recommender System. In Proceedings of the 45th International ACM SIGIR
+                                                                                         Conference on Research and Development in Information Retrieval. ACM.
+

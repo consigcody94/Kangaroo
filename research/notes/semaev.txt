@@ -1,0 +1,318 @@
+Summation polynomials and the discrete
+  logarithm problem on elliptic curves
+
+                           Igor Semaev
+                 Department of Mathematics
+        University of Leuven,Celestijnenlaan 200B
+
+                     3001 Heverlee,Belgium
+              Igor.Semaev@wis.kuleuven.ac.be
+
+                        February 5, 2004
+
+                                          Abstract
+
+    The aim of the paper is the construction of the index calculus algo-
+rithm for the discrete logarithm problem on elliptic curves. The construc-
+tion presented here is based on the problem of finding bounded solutions
+to some explicit modular multivariate polynomial equations. These equa-
+tions arise from the elliptic curve summation polynomials introduced here
+and may be computed easily. Roughly speaking, we show that given the
+algorithm for solving such equations, which works in polynomial or low
+exponential time in the size of the input, one finds discrete logarithms
+faster than by means of Pollard's methods.
+
+    Keywords: elliptic curves, summation polynomials, the discrete log-
+arithm problem
+
+1 Introduction
+
+Let E be the elliptic curve defined over the prime finite field Fp of p elements
+by the equation
+
+                Y 2 = X3 + AX + B.                                          (1)
+
+The discrete log problem here is given P, Q  E(Fp) find an integer number
+n such that Q = nP in E(Fp) if such an n exists. It is of great importance
+in cryptography, see [1] and [2]. The aim of the paper is the construction
+of the index calculus algorithm for the problem. The construction presented
+here is based on the problem of finding bounded solutions to some explicit
+modular multivariate polynomial equations. These equations arise from the
+summation polynomials introduced in the second Section of the paper. In the
+third Section we show, roughly speaking, that given a good algorithm for solving
+such equations one finds discrete logarithms in E(Fp) probably faster than by
+
+                1
+means of Pollard's methods, see [3],[4],[6] for them. An index calculus for the
+problem, called the xendi calculus, was published by Silverman [7]. It was shown
+in [8] that the xendi calculus fails to improve known bounds. We stress here that
+the underlying idea of the present new approach is different from Silverman's.
+
+2 Summation Polynomials
+
+Let E be the elliptic curve given by the equation (1) over a field K of charac-
+
+teristic = 2, 3, which is not necessary Fp now. For any natural number n  2
+we introduce the polynomial fn = fn(X1, X2, . . . , Xn) in n variables which is
+related to the arithmetic operation on E. We call this polynomial summation
+
+polynomial and define it by the following property. Let x1, x2, . . . , xn be any el-
+ements from K, the algebraic closure of the field K, then fn(x1, x2, . . . , xn) = 0
+if and only if there exist y1, y2, . . . , yn  K such that points (xi, yi) are on E
+and (x1, y1) + (x2, y2) + . . . + (xn, yn) = P in the group E(K).
+
+Theorem 1 The polynomial fn may be defined by f2(X1, X2) = X1 - X2, and
+f3(X1, X2, X3) =
+
+(X1 -X2)2X32 -2((X1 +X2)(X1X2 +A)+2B)X3 +((X1X2 -A)2 -4B(X1 +X2)),
+
+and fn(X1, X2, . . . , Xn) =
+
+ResX (fn-k(X1, . . . , Xn-k-1, X), fk+2(Xn-k, . . . , Xn, X))     (2)
+
+for any n  4 and n - 3  k  1.
+    The polynomial fn is symmetric and of degree 2n-2 in each variable Xi for
+
+any n  3.
+
+    The polynomial fn is absolutely irreducible and
+
+fn(X1, . . . , Xn-1, Xn) = fn2-1(X1, . . . , Xn-1)Xn2n-2 + . . .
+
+for any n  3.
+
+Proof. First we define the polynomial fn for n = 2 and n = 3. One sees that
+f2 = X1 - X2. Now we determine f3. Let (x1, y1) and (x2, y2) be two affine
+points on E such that x1 = x2. We denote
+
+                              (x3, y3) = (x1, y1) + (x2, y2),
+                              (x4, y4) = (x1, y1) - (x2, y2).
+
+One can see that x3, x4 are roots of a quadratic polynomial, whose coefficients
+are symmetric functions in x1 and x2. Really, we derive
+
+                                   x3 = 32 - (x1 + x2),
+                                   x4 = 24 - (x1 + x2),
+
+                              2
+where 3 = (y1 - y2)/(x1 - x2) and 4 = (y1 + y2)/(x1 - x2). Then
+
+             x3 + x4 =
+
+     32 + 24 - 2(x1 + x2) =
+
+     2  (x1  +x2 )(x1 x2 +A)+2B  ,
+                  (x1 -x2 )2
+
+and
+
+                                               x3x4 =
+                            (32 - (x1 + x2))(24 - (x1 + x2)) =
+
+                                      , (x1 x2 -A)2 -4B (x1 +x2 )
+
+                                                                  (x1 -x2 )2
+
+The x-coordinates x3 and x4 are roots of the polynomial
+
+(x1 - x2)2X2 - 2((x1 + x2)(x1x2 + A) + 2B)X + ((x1x2 - A)2 - 4B(x1 + x2)).
+
+If x1 = x2 and (x3, y3) = 2(x1, y1), where (x3, y3) is an affine point on E, one
+can see that x3 is the root of the same polynomial. It means that one can take
+f3(X1, X2, X3) =
+
+(X1 -X2)2X32 -2((X1 +X2)(X1X2 +A)+2B)X3 +((X1X2 -A)2 -4B(X1 +X2)).
+
+One sees that the polynomial f3(X1, X2, X3) is irreducible over the field K(X3).
+It follows from the fact that the equation f3(X1, X2, X3) = 0 is isomorphic
+over K(X3) to the initial elliptic curve (1). In particular, the polynomial
+f3(X1, X2, X3) is absolutely irreducible. So we have proved all claims when
+n = 3.
+
+    Let n  4, and n - 3  k  1, and
+
+     (x1, y1) + (x2, y2) + . . . + (xn, yn) = P                          (3)
+
+in the group E(K). First we consider the case (x1, y1)+. . .+(xn-k-1, yn-k-1) =
+(x, y) for some affine point (x, y)  E. So (xn-k, yn-k)+. . .+(xn, yn) = (x, -y).
+It implies the polynomials fn-k(x1, . . . , xn-k-1, X) and fk+2(xn-k, . . . , xn, X)
+have nonzero leading coefficients and the common root x. It follows by induction
+that the leading coefficients of the polynomials are fn2-k-1(x1, . . . , xn-k-1) and
+fk2+1(xn-k, . . . , xn) which are nonzero. Then fn(x1, x2, . . . , xn) =
+
+     ResX (fn-k(x1, . . . , xn-k-1, X), fk+2(xn-k, . . . , xn, X)) = 0
+
+Let (x1, y1) + . . . + (xn-k-1, yn-k-1) = P then (xn-k, yn-k) + . . . + (xn, yn) =
+P and the leading coefficients of the polynomials fn-k(x1, . . . , xn-k-1, X) and
+fk+2(xn-k, . . . , xn, X) are zeros. Again fn(x1, x2, . . . , xn) =
+
+     ResX (fn-k(x1, . . . , xn-k-1, X), fk+2(xn-k, . . . , xn, X)) = 0.
+
+             3
+When fn(x1, x2, . . . , xn) = 0 the equality (3) is true. Really, if the leading coef-
+ficients of the polynomials fn-k(X1, . . . , Xn-1, X) and fk+2(Xn-k, . . . , Xn, X)
+in X are zeros at x1, . . . , xn then
+
+                      (x1, y1) + . . . + (xn-k-1, yn-k-1) = P,
+                            (xn-k, yn-k) + . . . + (xn, yn) = P,
+
+by induction for some yi  K. So (3) is true. If one of these coefficients isn't zero
+then the polynomials fn-k(x1, . . . , xn-1, X) and fk+2(xn-k, . . . , xn, X) have a
+common root x  K¯ . Again by induction
+
+                 (x1, y1) + . . . + (xn-k-1, yn-k-1) = (x, y)
+                    (xn-k, yn-k) + . . . + (xn, yn) = ±(x, y)
+
+and (3) is true.
+    By induction and using known properties of the resultant one gets degXn fn 
+
+2n-2. On the other hand one can always find x1, . . . , xn-1  K such that the
+x-coordinates of 2n-2 points
+
+                             (x1, y1) ± . . . ± (xn-1, yn-1)
+
+are pairwise different. It means that the polynomial fn(x1, . . . , xn-1, Xn) in Xn
+has just 2n-2 different roots. That is degXn fn = 2n-2. The same is true for all
+other variables.
+
+    Now we prove that fn is absolutely irreducible. Let on the contrary fn =
+G1G2 for some polynomials Gi over K. It follows from the definition of the
+polynomial fn that Gi is a constant or depends on all variables. From (2) it
+follows that
+
+                                 fn = (Xn-1 - Xn)2n-2 F1F2,
+
+where F1 = fn-1(X1, . . . , Xn-2, X), and F2 = fn-1(X1, . . . , Xn-2, X), and
+
+X, X  K1 = K(Xn-1, Xn) are roots of the polynomial f3(Xn-1, Xn, X). One
+
+proves by induction on n and using the same argument that the polynomials F1
+
+and F2 are irreducible over K1. So F1 should divide one of Gi which is defined
+
+over K. Therefore F1 and F2 divide the same polynomial Gi, for example G1.
+
+So G2 should be a constant and the polynomial fn is absolutely irreducible.
+
+To prove the last claim of the Theorem we observe that the coefficient at
+X 2n-2
+        of  the  polynomial  fn  is  just
+   n
+
+                 Z 2n-2          fn  (X1     ,  .  .  .  ,  Xn-1  ,  Xn  /Zn  ),
+
+                   n
+
+when Zn = 0. One sees that
+
+                 Z 2n-2          fn  (X1  ,  .  .  .  ,  Xn-1,  Xn/Zn)        =
+
+                   n
+
+        ResX (fn-k(X1, . . . , Xn-k-1, X), Zn2k fk+2(Xn-k, . . . , Xn/Zn, X)).
+
+By induction the last resultant, when Zn = 0, is the resultant
+
+            ResX (fn-k(X1, . . . , Xn-k-1, X), fk2+1(Xn-k, . . . , Xn-1, X))
+which equals fn2-1(X1, . . . , Xn-1). This finishes the proof of the Theorem.
+
+                                                      4
+Remark 1 In the case of characteristic 2 and 3 the same polynomial may be
+introduced and computed in a similar way. So we omit this. Insted we give two
+first summation polynomials f3 and f4 for the Koblitz elliptic curves, see [9],
+defined over the finite field of two elements F2 by the equation
+
+                          Y 2 + XY = X3 + aX2 + 1,                     (4)
+
+where a = 0, 1. They are
+
+                 f3(x1, x2, x3) = (x1x2 + x1x3 + x2x3)2 + x1x2x3 + 1,
+and
+
+                                    f4(x1, x2, x3, x4) =
+      (x1 + x2 + x3 + x4)4 + (x1x2x3 + x1x2x4 + x1x3x4 + x2x3x4)4 +
+   x1x2x3x4(x1x2x3 + x1x2x4 + x1x3x4 + x2x3x4 + x1 + x2 + x3 + x4)2
+(x1x2x3x4)2(x1 + x2 + x3 + x4)2 + (x1x2x3 + x1x2x4 + x1x3x4 + x2x3x4)2
+
+3 The Discrete Logarithm Problem
+
+We return now to the discrete logarithm problem in E(Fp), where E is given
+by (1) over the field Fp. We fix any natural number n  2. Let R = (x, y) =
+l1P + l2Q in E(Fp) for random integers l1 and l2. Let's consider the equation
+
+fn+1(x1, . . . , xn, x)  0( mod p)                                     (5)
+
+in variables x1, . . . , xn. Very probably (5) has a solution x10, . . . , xm 0 , where x0i
+are integer numbers bounded by p1/n+ for some small  > 0 or xi0 are rational
+numbers the numerator and the denominator of which are bounded by p1/(2n)+.
+Imagine we have an algorithm able to find such a solution. It would imply we
+are able to find the relation
+
+(x01, y10) + . . . + (x0n, yn0 ) = l1P + l2Q                           (6)
+
+for some y10, . . . , yn0 in Fp or in Fp2 . It isn't important if some yi0  Fp2 \ Fp,
+since the sum of all such points in (6) is an order 2 point on E. The relations
+(6) may be combined with the relations
+
+                               (x1, y1) + . . . + (xm, ym) = P
+that would come from the equations
+
+                          fm(x1, . . . , xm)  0( mod p)                (7)
+
+for m  n if one could find them bounded by p1/n+. One should avoid trivial
+solutions to (5) and (7) like x1, x1, x2, x2, . . . , xk, xk is always solution to (7)
+when m = 2k. One needs about p1/n+ nontrivial solutions to find the logarithm
+
+                          5
+of Q to the base P . So if the algorithm, finding a bounded solution to (5) and (7),
+works in tp,n operations then the complexity of the discrete logarithm problem
+in E(Fp) is essentially
+
+                                      tp,np1/n+ + p2/n+2
+operations. When n  5, even for some exponential tp,n, this amount may be
+less than O(p1/2) provided by Pollard's methods.
+
+    There exist modular multivariate polynomial equations a bounded solution
+for which may be found in polynomial or low exponential time in the size of the
+input. The exciting question arising here is whether or not it is true for (5) and
+(7)?
+
+Remark 2 The similar approach may be developed for the Koblitz curve E
+defined by (4). To construct the index calculus algorithm for the discrete loga-
+rithm problem in E(F2l ) one should have an algorithm, working in polynomial
+or low exponential time, for findind polynomials x1, x2, . . . , xn over F2 of de-
+gree  l/n +  satisfing the equation fn+1(x1, x2, . . . , xn, x)  0 for a random
+polynomial x modulo an irreducible polynomial of degree l over the field F2.
+
+References
+
+[1] V.Miller, Use of elliptic curves in cryptography. Advances in cryptology--
+    CRYPTO '85 (Santa Barbara, Calif., 1985), 417­426, Lecture Notes in Com-
+    put. Sci., 218(1986), Springer, Berlin, 417­426.
+
+[2] N. Koblitz Elliptic curve cryptosystems, Math. Comp. 48 (1987), 203­209.
+
+[3] J.Pollard Monte-Carlo methods for index computation mod p, Math.Comp.
+    32 (1978), 918­924.
+
+[4] P.van Oorschot and M.Wiener, Parallel collision search with cryptanalytic
+    applications, J. Cryptology 12 (1999), no. 1, 1­28.
+
+[5] M.Wiener and R.Zuccherato, Faster attacks on elliptic curve cryptosys-
+    tems. Selected areas in cryptography (Kingston, ON, 1998), Lecture Notes
+    in Comput. Sci., 1556(1999), Springer, Berlin, 190­200.
+
+[6] R.Gallant, R.Lambert,and S.Vanstone, Improving the parallelized Pollard
+    lambda search on anomalous binary curves. Math. Comp. 69 (2000), no.
+    232, 1699­1705.
+
+[7] Silverman, J. H.: The xedni calculus and the elliptic curve discrete logarithm
+    problem. Des. Codes Cryptogr. 20 (2000), no. 1, 5­40.
+
+[8] Jacobson, M. J., Koblitz, N., Silverman, J. H., Stein, A., Teske, E.: Analysis
+    of the xedni calculus attack. Des. Codes Cryptogr. 20 (2000), no. 1, 41­64.
+
+[9] Digital Signature Standard(DSS), FIPS PUB 186-2,2000 January 27.
+
+                                                   6
+
