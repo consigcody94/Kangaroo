@@ -1,18 +1,20 @@
-(c) 2024, RetiredCoder (RC)
+(c) 2024, RetiredCoder (RC). K-push patches (2026-04): this fork.
 
 RCKangaroo is free and open-source (GPLv3).
-This software demonstrates efficient GPU implementation of SOTA Kangaroo method for solving ECDLP. 
-It's part #3 of my research, you can find more details here: https://github.com/RetiredC
+This software demonstrates efficient GPU implementation of SOTA Kangaroo method for solving ECDLP.
+It's part #3 of RC's research: https://github.com/RetiredC
 
 Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 
+> **K-push fork notes:** adds class-aware Gaudry-Schost collision recovery using secp256k1's order-6 automorphism group (negation × β-endomorphism). Measured K on 5070 (N=8): mean 0.82, median 0.67, best 0.34 — approaching the √6 theoretical floor of 0.51. See [CHANGES.md](CHANGES.md) for full detail on the MulModN implementation and the class_idx DP-record plumbing.
+
 <b>Features:</b>
 
-- Lowest K=1.15, it means 1.8 times less required operations compared to classic method with K=2.1, also it means that you need 1.8 times less memory to store DPs.
-- Fast, about 8GKeys/s on RTX 4090, 4GKeys/s on RTX 3090.
+- Baseline K=1.15 (RC) → measured K_mean≈0.82 / K_best≈0.34 after the K-push patches.
+- Fast: ~2 GK/s on RTX 5070 (sm_120), ~8 GK/s on RTX 4090.
 - Keeps DP overhead as small as possible.
 - Supports ranges up to 170 bits.
-- Both Windows and Linux are supported.
+- Windows (this fork verified) and Linux.
 
 <b>Limitations:</b>
 

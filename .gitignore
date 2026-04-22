@@ -1,0 +1,29 @@
+# Build artifacts
+*.exe
+*.obj
+*.o
+*.lib
+*.exp
+*.pdb
+*.idb
+*.ilk
+x64/
+Debug/
+Release/
+
+# IDE / editor
+.vs/
+.vscode/
+*.swp
+*.bak
+
+# Primary-source PDFs (re-download from archive.org / arxiv)
+# Keep research/notes/ for extracted text and scripts
+research/arxiv/*.pdf
+research/arxiv-extended/*.pdf
+research/chinese/*.pdf
+research/sanskrit/*.pdf
+
+# OS
+.DS_Store
+Thumbs.db

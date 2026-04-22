@@ -43,6 +43,14 @@ public:
 	void InvModP();
 	void SqrtModP();
 
+	// Scalar field (mod n = secp256k1 group order) operations
+	// Used for key recovery when Gaudry-Schost collision involves endomorphism lambda
+	void AddModN(EcInt& val);
+	void SubModN(EcInt& val);
+	void NegModN();
+	void MulModN(EcInt& val);   // double-and-add bitwise, O(256) iters — not a hot-loop function
+	void InvModN();             // modular inverse via Fermat (n prime): x^(n-2) mod n
+
 	void RndBits(int nbits);
 	void RndMax(EcInt& max);
 
@@ -95,3 +103,12 @@ public:
 void InitEc();
 void DeInitEc();
 void SetRndSeed(u64 seed);
+
+// Mod-n scalar constants used by Gaudry-Schost collision recovery
+extern EcInt g_N;
+extern EcInt g_LAMBDA_N;
+extern EcInt g_LAMBDA2_N;
+extern EcInt g_INV_1_MINUS_LAMBDA;
+extern EcInt g_INV_1_PLUS_LAMBDA;
+extern EcInt g_INV_1_MINUS_LAMBDA2;
+extern EcInt g_INV_1_PLUS_LAMBDA2;

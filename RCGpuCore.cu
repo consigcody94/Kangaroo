@@ -205,14 +205,19 @@ __global__ void KernelA(const TKparams Kparams)
 			}
 
 #ifdef GS_MODE
-			// GS mode: use pre-computed canonical x for DP check
+			// GS mode: use pre-computed canonical x for DP check.
+			// Pack equiv_new (class_idx, 0..5 = 3 bits) into low 4 bits of stored x.
+			// BuildDP strips these bits before placing into DPs[0..2] (matching space).
+			// No impact on DP-match precision because matching keys off high bytes only.
 			if ((canon_new[3] & dp_mask64) == 0)
 			{
 				u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
 				u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
 				ind = min(ind, DPTABLE_MAX_CNT - 1);
 				int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-				dst[0] = ((int4*)canon_new)[0];
+				int4 packed = ((int4*)canon_new)[0];
+				packed.x = (packed.x & ~0xF) | (equiv_new & 0xF);
+				dst[0] = packed;
 				jmp_ind |= DP_FLAG;
 			}
 #else
@@ -576,6 +581,12 @@ __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u
 	if (ind >= DPTABLE_MAX_CNT)
 		return;
 	int4 rx = *(int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
+#ifdef GS_MODE
+	// Extract class_idx that was packed into low 4 bits of rx.x by the DP-store site
+	// (KernelA line ~216). Strip these bits so match on high bytes works across classes.
+	u32 class_idx = rx.x & 0xF;
+	rx.x &= ~0xF;
+#endif
 	u32 pos = atomicAdd(Kparams.DPs_out, 1);
 	pos = min(pos, MAX_DP_CNT - 1);
 	u32* DPs = Kparams.DPs_out + 4 + pos * GPU_DP_SIZE / 4;
@@ -583,7 +594,9 @@ __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u
 	*(int4*)&DPs[4] = ((int4*)d)[0];
 	*(u64*)&DPs[8] = d[2];
 #ifdef GS_MODE
-	DPs[10] = 0; // GS mode: equiv class stored separately, type not needed
+	// In GS mode we repurpose the type slot to carry class_idx (0..5).
+	// Host-side CheckNewPoints reads p[40] and now interprets it as class_idx.
+	DPs[10] = class_idx;
 #else
 	DPs[10] = 3 * kang_ind / Kparams.KangCnt; //kang type
 #endif
